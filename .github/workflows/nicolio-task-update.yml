@@ -1,0 +1,192 @@
+name: Nicolio Task Update
+
+on:
+  push:
+    branches: ["**"]
+
+jobs:
+  update-task-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update task notes and status via Nicolio API
+        env:
+          NICOLIO_API_URL: ${{ secrets.NICOLIO_API_URL }}
+          NICOLIO_API_TOKEN: ${{ secrets.NICOLIO_API_TOKEN }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, re, subprocess, urllib.request, json, sys
+          from datetime import datetime, timezone, timedelta
+
+          API_URL   = os.environ["NICOLIO_API_URL"].rstrip("/")
+          API_TOKEN = os.environ["NICOLIO_API_TOKEN"]
+          REPO      = os.environ["REPO_NAME"]
+          BEFORE    = os.environ["BEFORE_SHA"]
+          AFTER     = os.environ["AFTER_SHA"]
+          JST       = timezone(timedelta(hours=9))
+
+          # task:UUID の後に done/complete/start が続くとステータス変更
+          TASK_RE = re.compile(
+              r'task:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'
+              r'(?:\s+(done|complete|start))?',
+              re.IGNORECASE
+          )
+
+          # アクション → ステータスのマッピング
+          ACTION_MAP = {
+              'done':     '確認待ち',
+              'complete': '確認待ち',
+              'start':    '進行中',
+          }
+
+          # コミット一覧取得（初回push: BEFORE=000...の場合は最新1件のみ）
+          if BEFORE.strip("0") == "":
+              cmd = ["git", "log", "--format=%H %s", "-1", AFTER]
+          else:
+              cmd = ["git", "log", "--format=%H %s", f"{BEFORE}..{AFTER}"]
+
+          result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+          commits = []
+          for line in result.stdout.strip().splitlines():
+              if not line:
+                  continue
+              parts = line.split(" ", 1)
+              full_hash = parts[0]
+              subject   = parts[1] if len(parts) > 1 else ""
+              commits.append((full_hash[:7], subject))
+
+          if not commits:
+              print("No commits to process.")
+              sys.exit(0)
+
+          # task:UUID を抽出して集約
+          # task_map: {task_id: {"commits": [(hash, subject)], "action": "done"|"start"|None}}
+          task_map = {}
+          for short_hash, subject in commits:
+              for m in TASK_RE.finditer(subject):
+                  tid = m.group(1).lower()
+                  action = m.group(2).lower() if m.group(2) else None
+
+                  if tid not in task_map:
+                      task_map[tid] = {"commits": [], "action": None}
+
+                  task_map[tid]["commits"].append((short_hash, subject))
+
+                  # done/complete は start より優先
+                  if action in ('done', 'complete'):
+                      task_map[tid]["action"] = action
+                  elif action == 'start' and task_map[tid]["action"] is None:
+                      task_map[tid]["action"] = action
+
+          if not task_map:
+              print("No task: references found in commits.")
+              sys.exit(0)
+
+          def api_request(method, path, body=None):
+              url = f"{API_URL}/{path}"
+              data = json.dumps(body).encode() if body else None
+              headers = {
+                  "Authorization": f"Bearer {API_TOKEN}",
+                  "Content-Type": "application/json",
+              }
+              req = urllib.request.Request(url, data=data, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      return resp.status, json.loads(resp.read())
+              except urllib.error.HTTPError as e:
+                  return e.code, {}
+
+          # タスクごとに notes + status を更新
+          now_jst = datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
+
+          for task_id, info in task_map.items():
+              commit_list = info["commits"]
+              action = info["action"]
+
+              status, data = api_request("GET", f"tasks?id=eq.{task_id}&select=id,notes,status")
+              if status != 200 or not data:
+                  print(f"[SKIP] task:{task_id} — not found (HTTP {status})")
+                  continue
+
+              task = data[0]
+              current_notes = task.get("notes") or ""
+              current_status = task.get("status") or ""
+
+              # notes 更新
+              new_lines = [
+                  f"【{REPO} {now_jst}】{subject}（{short_hash}）"
+                  for short_hash, subject in commit_list
+              ]
+              new_notes = (current_notes + "\n" if current_notes else "") + "\n".join(new_lines)
+
+              patch_body = {"notes": new_notes}
+
+              # ステータス変更（現在のステータスが完了・保留でない場合のみ）
+              if action and current_status not in ('完了', '保留'):
+                  new_status = ACTION_MAP[action]
+                  # 同じステータスへの変更はスキップ
+                  if new_status != current_status:
+                      patch_body["status"] = new_status
+
+              patch_status, _ = api_request("PATCH", f"tasks?id=eq.{task_id}", patch_body)
+              if patch_status in (200, 204):
+                  for line in new_lines:
+                      print(f"[OK] {line}")
+                  if "status" in patch_body:
+                      print(f"[OK] task:{task_id} — status: {current_status} → {patch_body['status']}")
+              else:
+                  print(f"[FAIL] task:{task_id} — PATCH failed (HTTP {patch_status})")
+          PYEOF
+
+      - name: Update last_pushed_at via Nicolio API
+        env:
+          NICOLIO_API_URL: ${{ secrets.NICOLIO_API_URL }}
+          NICOLIO_API_TOKEN: ${{ secrets.NICOLIO_API_TOKEN }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, urllib.request, json, sys
+          from datetime import datetime, timezone, timedelta
+
+          API_URL   = os.environ["NICOLIO_API_URL"].rstrip("/")
+          API_TOKEN = os.environ["NICOLIO_API_TOKEN"]
+          REPO      = os.environ["REPO_NAME"]
+          JST       = timezone(timedelta(hours=9))
+
+          now_jst = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+
+          def api_request(method, path, body=None):
+              url = f"{API_URL}/{path}"
+              data = json.dumps(body).encode() if body else None
+              headers = {
+                  "Authorization": f"Bearer {API_TOKEN}",
+                  "Content-Type": "application/json",
+              }
+              req = urllib.request.Request(url, data=data, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      return resp.status, json.loads(resp.read())
+              except urllib.error.HTTPError as e:
+                  return e.code, {}
+
+          # リポジトリ名でprojectsテーブルを検索
+          status, data = api_request("GET", f"projects?name=eq.{REPO}&select=id,name")
+          if status != 200 or not data:
+              print(f"[SKIP] Project '{REPO}' not found in projects table")
+              sys.exit(0)
+
+          project_id = data[0]["id"]
+          patch_status, _ = api_request("PATCH", f"projects?id=eq.{project_id}", {"last_pushed_at": now_jst})
+          if patch_status in (200, 204):
+              print(f"[OK] {REPO}: last_pushed_at = {now_jst}")
+          else:
+              print(f"[FAIL] {REPO}: PATCH failed (HTTP {patch_status})")
+          PYEOF
