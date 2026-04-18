@@ -116,6 +116,11 @@ export function AnnualView() {
     s + EXPENSE_CATEGORIES.reduce((es, cat) =>
       es + (expenseGroups[cat] ?? []).reduce((is, i) => is + (tgtLookup[i.id]?.[m] ?? 0), 0), 0), 0)
 
+  const cmpTotalSales = salesItem ? FISCAL_MONTHS.reduce((s, m) => s + (cmpLookup[salesItem.id]?.[m] ?? 0), 0) : 0
+  const cmpTotalExp = FISCAL_MONTHS.reduce((s, m) =>
+    s + EXPENSE_CATEGORIES.reduce((es, cat) =>
+      es + (expenseGroups[cat] ?? []).reduce((is, i) => is + (cmpLookup[i.id]?.[m] ?? 0), 0), 0), 0)
+
   const compareLabel = compareBase === 'target' ? `目標 ${fiscalYear}年度` : compareBase === 'lastyear' ? `昨対 ${fiscalYear - 1}年度実績` : `見通し ${fiscalYear}年度`
   const hasCmpData = dataType === '実績' && Object.keys(cmpLookup).length > 0
 
@@ -186,24 +191,34 @@ export function AnnualView() {
               <div className="kpi-label">年間売上 · YTD</div>
               <div className="kpi-value">{formatMan(totalSales)}<span className="unit">円</span></div>
               <div className="kpi-meta">
-                {tgtTotalSales > 0 && activeMonths > 0 && (
+                {dataType === '実績' && compareBase === 'target' && tgtTotalSales > 0 && activeMonths > 0 && (
                   <span className={`kpi-delta ${totalSales / (tgtTotalSales * activeMonths / 12) >= 1 ? 'pos' : 'neg'}`}>
                     {totalSales / (tgtTotalSales * activeMonths / 12) >= 1 ? '▲' : '▼'} {Math.abs(((totalSales / (tgtTotalSales * activeMonths / 12)) - 1) * 100).toFixed(1)}%
                   </span>
                 )}
-                <span>vs 目標ペース</span>
+                {dataType === '実績' && compareBase !== 'target' && hasCmpData && cmpTotalSales > 0 && (
+                  <span className={`kpi-delta ${totalSales / cmpTotalSales >= 1 ? 'pos' : 'neg'}`}>
+                    {totalSales / cmpTotalSales >= 1 ? '▲' : '▼'} {Math.abs(((totalSales / cmpTotalSales) - 1) * 100).toFixed(1)}%
+                  </span>
+                )}
+                <span>{dataType === '実績' ? (compareBase === 'target' ? 'vs 目標ペース' : compareBase === 'lastyear' ? 'vs 昨対' : 'vs 見通し') : ''}</span>
               </div>
             </div>
             <div className="kpi">
               <div className="kpi-label">支出合計 · YTD</div>
               <div className="kpi-value">{formatMan(totalExp)}<span className="unit">円</span></div>
               <div className="kpi-meta">
-                {tgtTotalExp > 0 && activeMonths > 0 && (
+                {dataType === '実績' && compareBase === 'target' && tgtTotalExp > 0 && activeMonths > 0 && (
                   <span className={`kpi-delta ${totalExp / (tgtTotalExp * activeMonths / 12) <= 1 ? 'pos' : 'neg'}`}>
                     {totalExp / (tgtTotalExp * activeMonths / 12) <= 1 ? '▼' : '▲'} {Math.abs(((totalExp / (tgtTotalExp * activeMonths / 12)) - 1) * 100).toFixed(1)}%
                   </span>
                 )}
-                <span>vs 目標ペース</span>
+                {dataType === '実績' && compareBase !== 'target' && hasCmpData && cmpTotalExp > 0 && (
+                  <span className={`kpi-delta ${totalExp / cmpTotalExp <= 1 ? 'pos' : 'neg'}`}>
+                    {totalExp / cmpTotalExp <= 1 ? '▼' : '▲'} {Math.abs(((totalExp / cmpTotalExp) - 1) * 100).toFixed(1)}%
+                  </span>
+                )}
+                <span>{dataType === '実績' ? (compareBase === 'target' ? 'vs 目標ペース' : compareBase === 'lastyear' ? 'vs 昨対' : 'vs 見通し') : ''}</span>
               </div>
             </div>
             <div className="kpi">
