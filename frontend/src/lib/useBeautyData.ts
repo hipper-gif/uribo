@@ -27,13 +27,13 @@ export function useMonthlyData(storeId: number, fiscalYear: number, dataType?: D
   const [loading, setLoading] = useState(false)
 
   const reload = useCallback(async () => {
-    if (!storeId || !fiscalYear) return
+    if (!fiscalYear) return
     setLoading(true)
     const params: Record<string, string> = {
       select: '*',
-      store_id: `eq.${storeId}`,
       fiscal_year: `eq.${fiscalYear}`,
     }
+    if (storeId > 0) params.store_id = `eq.${storeId}`
     if (dataType) params.data_type = `eq.${dataType}`
     const r = await apiGet<BeautyMonthlyData[]>('beauty_monthly_data', params)
     if (r.data) setData(r.data)

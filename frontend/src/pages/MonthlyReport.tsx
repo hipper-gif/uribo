@@ -28,12 +28,12 @@ export function MonthlyReport() {
 
   const aLookup = useMemo(() => {
     const map: Record<number, Record<number, number>> = {}
-    for (const d of actualData) { if (!map[d.item_id]) map[d.item_id] = {}; map[d.item_id][d.month] = parseFloat(d.amount) }
+    for (const d of actualData) { if (!map[d.item_id]) map[d.item_id] = {}; map[d.item_id][d.month] = (map[d.item_id][d.month] ?? 0) + parseFloat(d.amount) }
     return map
   }, [actualData])
   const tLookup = useMemo(() => {
     const map: Record<number, Record<number, number>> = {}
-    for (const d of targetData) { if (!map[d.item_id]) map[d.item_id] = {}; map[d.item_id][d.month] = parseFloat(d.amount) }
+    for (const d of targetData) { if (!map[d.item_id]) map[d.item_id] = {}; map[d.item_id][d.month] = (map[d.item_id][d.month] ?? 0) + parseFloat(d.amount) }
     return map
   }, [targetData])
 
@@ -56,7 +56,7 @@ export function MonthlyReport() {
   const achS = tSales ? aSales / tSales : 0, achE = tExp ? aExp / tExp : 0, achP = tProfit ? aProfit / tProfit : 0
 
   const toggle = (cat: string) => { setExpanded(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n }) }
-  const store = stores.find(s => s.id === storeId)
+  const store = storeId === 0 ? { name: '全店舗' } : stores.find(s => s.id === storeId)
   const years = Array.from({ length: 6 }, (_, i) => currentFiscalYear() - i)
   const qLabel = (m: number) => [4,5,6].includes(m) ? 'Q1' : [7,8,9].includes(m) ? 'Q2' : [10,11,12].includes(m) ? 'Q3' : 'Q4'
 
@@ -73,6 +73,7 @@ export function MonthlyReport() {
       </div>
       <div className="filter-bar">
         <select className="select" value={storeId} onChange={e => setStoreId(Number(e.target.value))}>
+          <option value={0}>全店舗</option>
           {stores.map(s => <option key={s.id} value={s.id}>{s.name}{!s.is_active ? ' （閉店）' : ''}</option>)}
         </select>
         <select className="select" value={fiscalYear} onChange={e => setFiscalYear(Number(e.target.value))}>

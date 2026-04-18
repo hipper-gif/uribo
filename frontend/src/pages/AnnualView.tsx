@@ -46,7 +46,7 @@ export function AnnualView() {
     const map: Record<number, Record<number, number>> = {}
     for (const d of data) {
       if (!map[d.item_id]) map[d.item_id] = {}
-      map[d.item_id][d.month] = parseFloat(d.amount)
+      map[d.item_id][d.month] = (map[d.item_id][d.month] ?? 0) + parseFloat(d.amount)
     }
     return map
   }, [data])
@@ -56,7 +56,7 @@ export function AnnualView() {
     const map: Record<number, Record<number, number>> = {}
     for (const d of compareData) {
       if (!map[d.item_id]) map[d.item_id] = {}
-      map[d.item_id][d.month] = parseFloat(d.amount)
+      map[d.item_id][d.month] = (map[d.item_id][d.month] ?? 0) + parseFloat(d.amount)
     }
     return map
   }, [compareData, dataType])
@@ -65,7 +65,7 @@ export function AnnualView() {
     const map: Record<number, Record<number, number>> = {}
     for (const d of targetData) {
       if (!map[d.item_id]) map[d.item_id] = {}
-      map[d.item_id][d.month] = parseFloat(d.amount)
+      map[d.item_id][d.month] = (map[d.item_id][d.month] ?? 0) + parseFloat(d.amount)
     }
     return map
   }, [targetData])
@@ -111,7 +111,7 @@ export function AnnualView() {
   const compareLabel = compareBase === 'target' ? `目標 ${fiscalYear}年度` : compareBase === 'lastyear' ? `昨対 ${fiscalYear - 1}年度実績` : `見通し ${fiscalYear}年度`
   const hasCmpData = dataType === '実績' && Object.keys(cmpLookup).length > 0
 
-  const store = stores.find(s => s.id === storeId)
+  const storeName = storeId === 0 ? '全店舗' : (stores.find(s => s.id === storeId)?.name ?? '')
   const years = Array.from({ length: 6 }, (_, i) => currentFiscalYear() - i)
 
   return (
@@ -123,7 +123,7 @@ export function AnnualView() {
             <span className="page-index">— 01 / ANNUAL</span>
             <h1 className="page-title">年間成績一覧</h1>
           </div>
-          <div className="page-subtitle">{fiscalYear}年度 · {store?.name ?? ''} · データ期間 {activeMonths} ヶ月</div>
+          <div className="page-subtitle">{fiscalYear}年度 · {storeName} · データ期間 {activeMonths} ヶ月</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {/* DataType seg */}
@@ -155,6 +155,7 @@ export function AnnualView() {
       {/* Filter bar: store + year */}
       <div className="filter-bar">
         <select className="select" value={storeId} onChange={e => setStoreId(Number(e.target.value))}>
+          <option value={0}>全店舗</option>
           {stores.map(s => <option key={s.id} value={s.id}>{s.name}{!s.is_active ? ' （閉店）' : ''}</option>)}
         </select>
         <select className="select" value={fiscalYear} onChange={e => setFiscalYear(Number(e.target.value))}>

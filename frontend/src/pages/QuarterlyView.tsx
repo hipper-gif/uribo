@@ -39,7 +39,7 @@ export function QuarterlyView() {
     const map: Record<number, Record<number, number>> = {}
     for (const d of actualData) {
       if (!map[d.item_id]) map[d.item_id] = {}
-      map[d.item_id][d.month] = parseFloat(d.amount)
+      map[d.item_id][d.month] = (map[d.item_id][d.month] ?? 0) + parseFloat(d.amount)
     }
     return map
   }, [actualData])
@@ -48,7 +48,7 @@ export function QuarterlyView() {
     const map: Record<number, Record<number, number>> = {}
     for (const d of targetData) {
       if (!map[d.item_id]) map[d.item_id] = {}
-      map[d.item_id][d.month] = parseFloat(d.amount)
+      map[d.item_id][d.month] = (map[d.item_id][d.month] ?? 0) + parseFloat(d.amount)
     }
     return map
   }, [targetData])
@@ -91,6 +91,7 @@ export function QuarterlyView() {
 
       <div className="filter-bar">
         <select className="select" value={storeId} onChange={e => setStoreId(Number(e.target.value))}>
+          <option value={0}>全店舗</option>
           {stores.map(s => <option key={s.id} value={s.id}>{s.name}{!s.is_active ? ' （閉店）' : ''}</option>)}
         </select>
         <select className="select" value={fiscalYear} onChange={e => setFiscalYear(Number(e.target.value))}>
