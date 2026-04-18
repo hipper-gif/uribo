@@ -6,33 +6,42 @@ import { DataEntry } from './pages/DataEntry'
 import { TargetSetting } from './pages/TargetSetting'
 
 const NAV = [
-  { to: '/', label: '年間' },
-  { to: '/quarterly', label: '四半期' },
-  { to: '/monthly', label: '月次' },
-  { to: '/entry', label: '入力' },
-  { to: '/targets', label: '目標' },
+  { to: '/', label: '年間', idx: '01' },
+  { to: '/quarterly', label: '四半期', idx: '02' },
+  { to: '/monthly', label: '月次', idx: '03' },
+  { to: '/entry', label: '入力', idx: '04' },
+  { to: '/targets', label: '目標', idx: '05' },
 ]
 
 export default function App() {
   return (
     <BrowserRouter basename="/uribo">
-      <div className="min-h-screen bg-gray-50 pb-16 lg:pb-0">
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
-          <div className="max-w-7xl mx-auto px-4 flex items-center h-14">
-            <h1 className="text-lg font-bold text-gray-900 mr-4 shrink-0">🐗 うりぼー</h1>
-            <nav className="flex gap-1 overflow-x-auto scrollbar-hide">
-              {NAV.map(n => (
-                <NavLink key={n.to} to={n.to} end={n.to === '/'}
-                  className={({ isActive }) =>
-                    `px-4 py-2.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap min-h-[44px] flex items-center ${
-                      isActive ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                    }`
-                  }>{n.label}</NavLink>
-              ))}
-            </nav>
+      <div className="app">
+        <header className="topbar">
+          <div className="brand">
+            <div className="brand-mark">U</div>
+            <div className="brand-text">
+              <span className="brand-name">うりぼー</span>
+              <span className="brand-sub">BEAUTY · SALES OS</span>
+            </div>
+          </div>
+          <nav className="nav scrollbar-hide">
+            {NAV.map(n => (
+              <NavLink key={n.to} to={n.to} end={n.to === '/'}
+                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+                <span className="nav-num">{n.idx}</span>
+                <span>{n.label}</span>
+              </NavLink>
+            ))}
+          </nav>
+          <div className="topbar-right">
+            <span className="pill"><span className="dot" />LIVE · {new Date().toLocaleDateString('ja-JP')}</span>
+            <button className="icon-btn" title="印刷" onClick={() => window.print()}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="3" y="8" width="10" height="6" rx="1"/><path d="M4 8V3h8v5M4 11h8"/></svg>
+            </button>
           </div>
         </header>
-        <main className="max-w-7xl mx-auto px-4 py-4">
+        <main className="page">
           <Routes>
             <Route path="/" element={<AnnualView />} />
             <Route path="/quarterly" element={<QuarterlyView />} />

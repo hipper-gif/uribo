@@ -43,3 +43,9 @@ export function formatAmount(amount: number): string {
 export function formatPercent(value: number): string {
   return (value * 100).toFixed(1) + '%'
 }
+
+/** Format in 万 (10k) units for compact display */
+export function formatMan(n: number): string {
+  if (Math.abs(n) >= 10000) return (n / 10000).toFixed(n >= 1000000 ? 0 : 1) + '万'
+  return Math.round(n).toLocaleString('ja-JP')
+}

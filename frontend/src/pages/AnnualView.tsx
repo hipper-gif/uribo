@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
-import { StoreYearSelector } from '../components/StoreYearSelector'
-import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, currentFiscalYear, formatAmount, formatPercent } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, currentFiscalYear, formatAmount, formatPercent, formatMan } from '../lib/types'
 import type { DataType } from '../lib/types'
+
+type CompareBase = 'target' | 'lastyear' | 'forecast'
 
 export function AnnualView() {
   const stores = useStores()
@@ -10,29 +11,17 @@ export function AnnualView() {
   const [storeId, setStoreId] = useState(1)
   const [fiscalYear, setFiscalYear] = useState(currentFiscalYear())
   const [dataType, setDataType] = useState<DataType>('実績')
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+  const [compareBase, setCompareBase] = useState<CompareBase>('target')
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const { data, loading } = useMonthlyData(storeId, fiscalYear, dataType)
-  const { data: targetData } = useMonthlyData(storeId, fiscalYear, dataType === '実績' ? '目標' : undefined)
+  const { data: targetData } = useMonthlyData(storeId, fiscalYear, '目標')
 
-  const lookup = useMemo(() => {
-    const map: Record<number, Record<number, number>> = {}
-    for (const d of data) {
-      if (!map[d.item_id]) map[d.item_id] = {}
-      map[d.item_id][d.month] = parseFloat(d.amount)
-    }
-    return map
-  }, [data])
-
-  const targetLookup = useMemo(() => {
-    if (dataType !== '実績') return {}
-    const map: Record<number, Record<number, number>> = {}
-    for (const d of targetData) {
-      if (!map[d.item_id]) map[d.item_id] = {}
-      map[d.item_id][d.month] = parseFloat(d.amount)
-    }
-    return map
-  }, [targetData, dataType])
+  // Compare data based on selected compare base
+  const compareDataType = compareBase === 'target' ? '目標' : compareBase === 'forecast' ? '見通し' : undefined
+  const compareFY = compareBase === 'lastyear' ? fiscalYear - 1 : fiscalYear
+  const compareActualType = compareBase === 'lastyear' ? '実績' : undefined
+  const { data: compareData } = useMonthlyData(storeId, compareFY, compareDataType ?? compareActualType)
 
   const displayItems = useMemo(() =>
     items.filter(i => !i.is_calculated).sort((a, b) => a.sort_order - b.sort_order), [items])
@@ -50,229 +39,308 @@ export function AnnualView() {
   }, [displayItems])
 
   const salesItem = useMemo(() => items.find(i => i.item_code === 'sales'), [items])
+  const customersItem = useMemo(() => items.find(i => i.item_code === 'customers'), [items])
+
+  // Lookup helpers
+  const lookup = useMemo(() => {
+    const map: Record<number, Record<number, number>> = {}
+    for (const d of data) {
+      if (!map[d.item_id]) map[d.item_id] = {}
+      map[d.item_id][d.month] = parseFloat(d.amount)
+    }
+    return map
+  }, [data])
+
+  const cmpLookup = useMemo(() => {
+    if (dataType !== '実績') return {}
+    const map: Record<number, Record<number, number>> = {}
+    for (const d of compareData) {
+      if (!map[d.item_id]) map[d.item_id] = {}
+      map[d.item_id][d.month] = parseFloat(d.amount)
+    }
+    return map
+  }, [compareData, dataType])
+
+  const tgtLookup = useMemo(() => {
+    const map: Record<number, Record<number, number>> = {}
+    for (const d of targetData) {
+      if (!map[d.item_id]) map[d.item_id] = {}
+      map[d.item_id][d.month] = parseFloat(d.amount)
+    }
+    return map
+  }, [targetData])
 
   function getVal(itemId: number, month: number): number {
     return lookup[itemId]?.[month] ?? 0
   }
-
+  function getCmpVal(itemId: number, month: number): number {
+    return cmpLookup[itemId]?.[month] ?? 0
+  }
   function getRowTotal(itemId: number): number {
-    return FISCAL_MONTHS.reduce((sum, m) => sum + getVal(itemId, m), 0)
+    return FISCAL_MONTHS.reduce((s, m) => s + getVal(itemId, m), 0)
   }
-
   function getCatTotal(cat: string, month: number): number {
-    return (expenseGroups[cat] ?? []).reduce((sum, i) => sum + getVal(i.id, month), 0)
+    return (expenseGroups[cat] ?? []).reduce((s, i) => s + getVal(i.id, month), 0)
   }
-
-  function getCatTargetTotal(cat: string, month: number): number {
-    return (expenseGroups[cat] ?? []).reduce((sum, i) => sum + (targetLookup[i.id]?.[month] ?? 0), 0)
+  function getCmpCatTotal(cat: string, month: number): number {
+    return (expenseGroups[cat] ?? []).reduce((s, i) => s + getCmpVal(i.id, month), 0)
   }
-
   function getExpenseTotal(month: number): number {
-    return EXPENSE_CATEGORIES.reduce((sum, cat) => sum + getCatTotal(cat, month), 0)
+    return EXPENSE_CATEGORIES.reduce((s, cat) => s + getCatTotal(cat, month), 0)
   }
-
   function getSalesAmount(month: number): number {
     return salesItem ? getVal(salesItem.id, month) : 0
   }
 
-  const toggleCategory = (cat: string) => {
-    setExpandedCategories(prev => {
-      const next = new Set(prev)
-      if (next.has(cat)) next.delete(cat)
-      else next.add(cat)
-      return next
-    })
+  const toggle = (cat: string) => {
+    setExpanded(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n })
   }
+
+  // KPI totals
+  const totalSales = FISCAL_MONTHS.reduce((s, m) => s + getSalesAmount(m), 0)
+  const totalExp = FISCAL_MONTHS.reduce((s, m) => s + getExpenseTotal(m), 0)
+  const totalProfit = totalSales - totalExp
+  const totalCust = customersItem ? FISCAL_MONTHS.reduce((s, m) => s + getVal(customersItem.id, m), 0) : 0
+  const activeMonths = FISCAL_MONTHS.filter(m => getSalesAmount(m) > 0).length
+
+  const tgtTotalSales = salesItem ? FISCAL_MONTHS.reduce((s, m) => s + (tgtLookup[salesItem.id]?.[m] ?? 0), 0) : 0
+  const tgtTotalExp = FISCAL_MONTHS.reduce((s, m) =>
+    s + EXPENSE_CATEGORIES.reduce((es, cat) =>
+      es + (expenseGroups[cat] ?? []).reduce((is, i) => is + (tgtLookup[i.id]?.[m] ?? 0), 0), 0), 0)
+
+  const store = stores.find(s => s.id === storeId)
+  const years = Array.from({ length: 6 }, (_, i) => currentFiscalYear() - i)
 
   return (
     <div>
-      <h2 className="text-xl font-bold text-gray-900 mb-4">年間成績一覧</h2>
-      <StoreYearSelector stores={stores} storeId={storeId} fiscalYear={fiscalYear}
-        dataType={dataType} onStoreChange={setStoreId} onYearChange={setFiscalYear}
-        onDataTypeChange={setDataType} showDataType showInactive />
+      {/* Page head */}
+      <div className="page-head">
+        <div>
+          <div className="page-title-row">
+            <span className="page-index">— 01 / ANNUAL</span>
+            <h1 className="page-title">年間成績一覧</h1>
+          </div>
+          <div className="page-subtitle">{fiscalYear}年度 · {store?.name ?? ''} · データ期間 {activeMonths} ヶ月</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* DataType seg */}
+          <div className="seg" role="tablist">
+            {(['実績', '目標', '見通し'] as DataType[]).map(dt => (
+              <button key={dt} className="seg-btn" aria-pressed={dataType === dt} onClick={() => setDataType(dt)}>
+                <span>{dt}</span>
+                <span className="sub">{{ '実績': 'ACTUAL', '目標': 'TARGET', '見通し': 'FORECAST' }[dt]}</span>
+              </button>
+            ))}
+          </div>
+          {/* Compare base seg (only when viewing actuals) */}
+          {dataType === '実績' && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span className="smallcaps">VS</span>
+              <div className="seg" role="tablist">
+                {([{ id: 'target', label: '目標', sub: 'TARGET' }, { id: 'lastyear', label: '昨対', sub: 'YoY' }, { id: 'forecast', label: '見通し', sub: 'FORECAST' }] as const).map(o => (
+                  <button key={o.id} className="seg-btn" aria-pressed={compareBase === o.id} onClick={() => setCompareBase(o.id)}>
+                    <span>{o.label}</span>
+                    <span className="sub">{o.sub}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Filter bar: store + year */}
+      <div className="filter-bar">
+        <select className="select" value={storeId} onChange={e => setStoreId(Number(e.target.value))}>
+          {stores.map(s => <option key={s.id} value={s.id}>{s.name}{!s.is_active ? ' （閉店）' : ''}</option>)}
+        </select>
+        <select className="select" value={fiscalYear} onChange={e => setFiscalYear(Number(e.target.value))}>
+          {years.map(y => <option key={y} value={y}>{y}年度</option>)}
+        </select>
+      </div>
 
       {loading ? (
-        <div className="text-gray-500 py-8 text-center">読み込み中...</div>
+        <div style={{ color: 'var(--ink-3)', padding: '48px 0', textAlign: 'center' }}>読み込み中...</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-xs border-collapse">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="sticky left-0 z-20 bg-gray-100 px-2 py-2 text-left font-medium text-gray-700 border border-gray-200 min-w-[120px]">科目</th>
-                {FISCAL_MONTHS.map(m => (
-                  <th key={m} className="px-2 py-2 text-right font-medium text-gray-700 border border-gray-200 min-w-[80px]">{MONTH_LABELS[m]}</th>
-                ))}
-                <th className="px-2 py-2 text-right font-medium text-gray-700 border border-gray-200 min-w-[90px] bg-gray-200">合計</th>
-                <th className="px-2 py-2 text-right font-medium text-gray-700 border border-gray-200 min-w-[80px] bg-gray-200">平均</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* 売上系: 常に個別表示 */}
-              {salesItems.map(item => {
-                const total = getRowTotal(item.id)
-                const avg = total / 12
-                const isSales = item.item_code === 'sales'
-                const isCustomers = item.item_code === 'customers'
-                return (
-                  <tr key={item.id} className={`${isSales ? 'bg-blue-50 font-semibold' : ''} hover:bg-gray-50`}>
-                    <td className="sticky left-0 z-10 bg-white px-2 py-1.5 border border-gray-200 text-gray-800 font-medium">
-                      {item.item_name}
-                    </td>
-                    {FISCAL_MONTHS.map(m => {
-                      const val = getVal(item.id, m)
-                      const tgt = targetLookup[item.id]?.[m]
-                      const showComparison = dataType === '実績' && tgt !== undefined && val !== 0
-                      const achievement = showComparison && tgt ? val / tgt : null
-                      return (
-                        <td key={m} className="px-2 py-1.5 text-right border border-gray-200 tabular-nums">
-                          <div>{val ? (isCustomers ? val.toLocaleString() : formatAmount(Math.round(val))) : '-'}</div>
-                          {achievement !== null && (
-                            <div className={`text-[10px] ${achievement >= 1 ? 'text-green-600' : 'text-red-500'}`}>
-                              {formatPercent(achievement)}
-                            </div>
-                          )}
-                        </td>
-                      )
-                    })}
-                    <td className="px-2 py-1.5 text-right border border-gray-200 bg-gray-50 font-semibold tabular-nums">
-                      {total ? (isCustomers ? total.toLocaleString() : formatAmount(Math.round(total))) : '-'}
-                    </td>
-                    <td className="px-2 py-1.5 text-right border border-gray-200 bg-gray-50 tabular-nums">
-                      {total ? (isCustomers ? Math.round(avg).toLocaleString() : formatAmount(Math.round(avg))) : '-'}
-                    </td>
+        <>
+          {/* KPI Grid */}
+          <div className="kpi-grid">
+            <div className="kpi">
+              <div className="kpi-label">年間売上 · YTD</div>
+              <div className="kpi-value">{formatMan(totalSales)}<span className="unit">円</span></div>
+              <div className="kpi-meta">
+                {tgtTotalSales > 0 && activeMonths > 0 && (
+                  <span className={`kpi-delta ${totalSales / (tgtTotalSales * activeMonths / 12) >= 1 ? 'pos' : 'neg'}`}>
+                    {totalSales / (tgtTotalSales * activeMonths / 12) >= 1 ? '▲' : '▼'} {Math.abs(((totalSales / (tgtTotalSales * activeMonths / 12)) - 1) * 100).toFixed(1)}%
+                  </span>
+                )}
+                <span>vs 目標ペース</span>
+              </div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">支出合計 · YTD</div>
+              <div className="kpi-value">{formatMan(totalExp)}<span className="unit">円</span></div>
+              <div className="kpi-meta">
+                {tgtTotalExp > 0 && activeMonths > 0 && (
+                  <span className={`kpi-delta ${totalExp / (tgtTotalExp * activeMonths / 12) <= 1 ? 'pos' : 'neg'}`}>
+                    {totalExp / (tgtTotalExp * activeMonths / 12) <= 1 ? '▼' : '▲'} {Math.abs(((totalExp / (tgtTotalExp * activeMonths / 12)) - 1) * 100).toFixed(1)}%
+                  </span>
+                )}
+                <span>vs 目標ペース</span>
+              </div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">純利益 · YTD</div>
+              <div className="kpi-value">{formatMan(totalProfit)}<span className="unit">円</span></div>
+              <div className="kpi-meta">
+                <span className={`kpi-delta ${totalProfit >= 0 ? 'pos' : 'neg'}`}>
+                  {totalSales ? formatPercent(totalProfit / totalSales) : '—'}
+                </span>
+                <span>利益率</span>
+              </div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-label">客数 · YTD</div>
+              <div className="kpi-value">{totalCust ? totalCust.toLocaleString() : '—'}<span className="unit">名</span></div>
+              <div className="kpi-meta">
+                <span>客単価 {totalCust ? formatAmount(Math.round(totalSales / totalCust)) : '—'}円</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Ledger table */}
+          <div className="card" style={{ padding: 0 }}>
+            <div className="card-head">
+              <div className="card-title"><span className="index">TABLE</span>科目別月次ブレイクダウン</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span className="smallcaps">単位: 円</span>
+                <button className="btn btn-ghost" onClick={() => setExpanded(new Set(EXPENSE_CATEGORIES))}>すべて展開</button>
+                <button className="btn btn-ghost" onClick={() => setExpanded(new Set())}>折りたたむ</button>
+              </div>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="ltable">
+                <thead>
+                  <tr>
+                    <th className="col-label">科目</th>
+                    {FISCAL_MONTHS.map(m => <th key={m}>{MONTH_LABELS[m]}</th>)}
+                    <th className="tot-col">合計</th>
+                    <th className="tot-col">月平均</th>
                   </tr>
-                )
-              })}
+                </thead>
+                <tbody>
+                  {/* Sales items */}
+                  {salesItems.map(item => {
+                    const total = getRowTotal(item.id)
+                    const isCust = item.item_code === 'customers'
+                    const isPrimary = item.item_code === 'sales'
+                    return (
+                      <tr key={item.id} className={isPrimary ? 'emphasis' : ''}>
+                        <td className="col-label">{item.item_name}</td>
+                        {FISCAL_MONTHS.map(m => {
+                          const v = getVal(item.id, m)
+                          const cv = dataType === '実績' ? getCmpVal(item.id, m) : 0
+                          const ach = v && cv ? v / cv : null
+                          return (
+                            <td key={m} className="num">
+                              {v ? (isCust ? v.toLocaleString() : formatMan(v)) : <span className="num-dim">—</span>}
+                              {ach !== null && <span className={`ach ${ach >= 1 ? 'pos' : 'neg'}`}>{formatPercent(ach)}</span>}
+                            </td>
+                          )
+                        })}
+                        <td className="num tot-col">{total ? (isCust ? total.toLocaleString() : formatMan(total)) : '—'}</td>
+                        <td className="num tot-col num-muted">{total ? (isCust ? Math.round(total / 12).toLocaleString() : formatMan(total / 12)) : '—'}</td>
+                      </tr>
+                    )
+                  })}
 
-              {/* 経費カテゴリ: アコーディオン */}
-              {EXPENSE_CATEGORIES.map(cat => {
-                const catItems = expenseGroups[cat]
-                if (!catItems || catItems.length === 0) return null
-                const isExpanded = expandedCategories.has(cat)
-                const catAnnualTotal = FISCAL_MONTHS.reduce((s, m) => s + getCatTotal(cat, m), 0)
-
-                return (
-                  <tbody key={cat}>
-                    {/* カテゴリ小計行 */}
-                    <tr
-                      className="bg-gray-100 cursor-pointer hover:bg-gray-200 border-t-2 border-gray-300 select-none"
-                      onClick={() => toggleCategory(cat)}
-                    >
-                      <td className="sticky left-0 z-10 bg-gray-100 px-2 py-1.5 border border-gray-200 font-semibold text-gray-700">
-                        <span className="inline-block w-4 text-gray-400">{isExpanded ? '▼' : '▶'}</span>
-                        {cat}
-                      </td>
-                      {FISCAL_MONTHS.map(m => {
-                        const val = getCatTotal(cat, m)
-                        const tgt = dataType === '実績' ? getCatTargetTotal(cat, m) : 0
-                        const achievement = tgt && val ? val / tgt : null
-                        return (
-                          <td key={m} className="px-2 py-1.5 text-right border border-gray-200 tabular-nums font-medium">
-                            <div>{val ? formatAmount(Math.round(val)) : '-'}</div>
-                            {achievement !== null && (
-                              <div className={`text-[10px] ${achievement >= 1 ? 'text-green-600' : 'text-red-500'}`}>
-                                {formatPercent(achievement)}
-                              </div>
-                            )}
-                          </td>
-                        )
-                      })}
-                      <td className="px-2 py-1.5 text-right border border-gray-200 bg-gray-200 font-semibold tabular-nums">
-                        {catAnnualTotal ? formatAmount(Math.round(catAnnualTotal)) : '-'}
-                      </td>
-                      <td className="px-2 py-1.5 text-right border border-gray-200 bg-gray-200 tabular-nums">
-                        {catAnnualTotal ? formatAmount(Math.round(catAnnualTotal / 12)) : '-'}
-                      </td>
-                    </tr>
-
-                    {/* 展開時: 個別科目 */}
-                    {isExpanded && catItems.map(item => {
-                      const total = getRowTotal(item.id)
-                      const avg = total / 12
-                      return (
-                        <tr key={item.id} className="hover:bg-gray-50">
-                          <td className="sticky left-0 z-10 bg-white px-2 py-1.5 pl-7 border border-gray-200 text-gray-600 text-[11px]">
-                            {item.item_name}
+                  {/* Expense categories */}
+                  {EXPENSE_CATEGORIES.map(cat => {
+                    const catItems = expenseGroups[cat]
+                    if (!catItems || catItems.length === 0) return null
+                    const isOpen = expanded.has(cat)
+                    const catAnnualTotal = FISCAL_MONTHS.reduce((s, m) => s + getCatTotal(cat, m), 0)
+                    return (
+                      <Fragment key={cat}>
+                        <tr className="cat-row" aria-expanded={isOpen} onClick={() => toggle(cat)}>
+                          <td className="col-label">
+                            <span className="caret">▶</span>{cat}
+                            <span className="chip" style={{ marginLeft: 10 }}>{catItems.length}</span>
                           </td>
                           {FISCAL_MONTHS.map(m => {
-                            const val = getVal(item.id, m)
+                            const v = getCatTotal(cat, m)
+                            const cv = dataType === '実績' ? getCmpCatTotal(cat, m) : 0
+                            const ach = v && cv ? v / cv : null
+                            const isOver = ach && ach > 1
                             return (
-                              <td key={m} className="px-2 py-1.5 text-right border border-gray-200 tabular-nums text-gray-600">
-                                {val ? formatAmount(Math.round(val)) : '-'}
+                              <td key={m} className="num">
+                                {v ? formatMan(v) : <span className="num-dim">—</span>}
+                                {ach !== null && <span className={`ach ${isOver ? 'neg' : 'pos'}`}>{formatPercent(ach)}</span>}
                               </td>
                             )
                           })}
-                          <td className="px-2 py-1.5 text-right border border-gray-200 bg-gray-50 tabular-nums text-gray-600">
-                            {total ? formatAmount(Math.round(total)) : '-'}
-                          </td>
-                          <td className="px-2 py-1.5 text-right border border-gray-200 bg-gray-50 tabular-nums text-gray-600">
-                            {total ? formatAmount(Math.round(avg)) : '-'}
-                          </td>
+                          <td className="num tot-col">{catAnnualTotal ? formatMan(catAnnualTotal) : '—'}</td>
+                          <td className="num tot-col num-muted">{catAnnualTotal ? formatMan(catAnnualTotal / 12) : '—'}</td>
                         </tr>
-                      )
-                    })}
-                  </tbody>
-                )
-              })}
+                        {isOpen && catItems.map(item => {
+                          const total = getRowTotal(item.id)
+                          return (
+                            <tr key={item.id} className="sub-row">
+                              <td className="col-label">{item.item_name}</td>
+                              {FISCAL_MONTHS.map(m => {
+                                const v = getVal(item.id, m)
+                                return <td key={m} className="num">{v ? formatMan(v) : <span className="num-dim">—</span>}</td>
+                              })}
+                              <td className="num tot-col">{total ? formatMan(total) : '—'}</td>
+                              <td className="num tot-col num-muted">{total ? formatMan(total / 12) : '—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </Fragment>
+                    )
+                  })}
 
-              {/* 支出合計行 */}
-              <tr className="bg-yellow-50 font-semibold border-t-2 border-gray-400">
-                <td className="sticky left-0 z-10 bg-yellow-50 px-2 py-1.5 border border-gray-200">支出合計</td>
-                {FISCAL_MONTHS.map(m => (
-                  <td key={m} className="px-2 py-1.5 text-right border border-gray-200 tabular-nums">
-                    {formatAmount(Math.round(getExpenseTotal(m)))}
-                  </td>
-                ))}
-                <td className="px-2 py-1.5 text-right border border-gray-200 bg-yellow-100 tabular-nums">
-                  {formatAmount(Math.round(FISCAL_MONTHS.reduce((s, m) => s + getExpenseTotal(m), 0)))}
-                </td>
-                <td className="px-2 py-1.5 text-right border border-gray-200 bg-yellow-100 tabular-nums">
-                  {formatAmount(Math.round(FISCAL_MONTHS.reduce((s, m) => s + getExpenseTotal(m), 0) / 12))}
-                </td>
-              </tr>
-              {/* 純利益行 */}
-              <tr className="bg-green-50 font-semibold">
-                <td className="sticky left-0 z-10 bg-green-50 px-2 py-1.5 border border-gray-200">純利益</td>
-                {FISCAL_MONTHS.map(m => {
-                  const profit = getSalesAmount(m) - getExpenseTotal(m)
-                  return (
-                    <td key={m} className={`px-2 py-1.5 text-right border border-gray-200 tabular-nums ${profit < 0 ? 'text-red-600' : ''}`}>
-                      {getSalesAmount(m) ? formatAmount(Math.round(profit)) : '-'}
-                    </td>
-                  )
-                })}
-                <td className="px-2 py-1.5 text-right border border-gray-200 bg-green-100 tabular-nums">
-                  {formatAmount(Math.round(FISCAL_MONTHS.reduce((s, m) => s + getSalesAmount(m) - getExpenseTotal(m), 0)))}
-                </td>
-                <td className="px-2 py-1.5 text-right border border-gray-200 bg-green-100 tabular-nums">
-                  {formatAmount(Math.round(FISCAL_MONTHS.reduce((s, m) => s + getSalesAmount(m) - getExpenseTotal(m), 0) / 12))}
-                </td>
-              </tr>
-              {/* 利益率行 */}
-              <tr className="bg-green-50">
-                <td className="sticky left-0 z-10 bg-green-50 px-2 py-1.5 border border-gray-200 font-medium">利益率</td>
-                {FISCAL_MONTHS.map(m => {
-                  const sales = getSalesAmount(m)
-                  const profit = sales - getExpenseTotal(m)
-                  const rate = sales ? profit / sales : 0
-                  return (
-                    <td key={m} className={`px-2 py-1.5 text-right border border-gray-200 tabular-nums ${rate < 0 ? 'text-red-600' : ''}`}>
-                      {sales ? formatPercent(rate) : '-'}
-                    </td>
-                  )
-                })}
-                <td className="px-2 py-1.5 text-right border border-gray-200 bg-green-100 tabular-nums">
-                  {(() => {
-                    const totalSales = FISCAL_MONTHS.reduce((s, m) => s + getSalesAmount(m), 0)
-                    const totalExp = FISCAL_MONTHS.reduce((s, m) => s + getExpenseTotal(m), 0)
-                    return totalSales ? formatPercent((totalSales - totalExp) / totalSales) : '-'
-                  })()}
-                </td>
-                <td className="px-2 py-1.5 text-right border border-gray-200 bg-green-100" />
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                  {/* Total expenses */}
+                  <tr className="total-row">
+                    <td className="col-label">支出合計</td>
+                    {FISCAL_MONTHS.map(m => {
+                      const v = getExpenseTotal(m)
+                      return <td key={m} className="num">{v ? formatMan(v) : '—'}</td>
+                    })}
+                    <td className="num tot-col">{formatMan(totalExp)}</td>
+                    <td className="num tot-col num-muted">{formatMan(totalExp / 12)}</td>
+                  </tr>
+
+                  {/* Profit */}
+                  <tr className={`profit-row ${totalProfit < 0 ? 'loss' : ''}`}>
+                    <td className="col-label">純利益</td>
+                    {FISCAL_MONTHS.map(m => {
+                      const s = getSalesAmount(m)
+                      const e = getExpenseTotal(m)
+                      const p = s - e
+                      return <td key={m} className="num">{s ? formatMan(p) : '—'}</td>
+                    })}
+                    <td className="num tot-col">{formatMan(totalProfit)}</td>
+                    <td className="num tot-col">{formatMan(totalProfit / 12)}</td>
+                  </tr>
+
+                  {/* Profit rate */}
+                  <tr className="rate-row">
+                    <td className="col-label">利益率</td>
+                    {FISCAL_MONTHS.map(m => {
+                      const s = getSalesAmount(m)
+                      const e = getExpenseTotal(m)
+                      const r = s ? (s - e) / s : 0
+                      return <td key={m} className="num">{s ? formatPercent(r) : '—'}</td>
+                    })}
+                    <td className="num tot-col">{totalSales ? formatPercent(totalProfit / totalSales) : '—'}</td>
+                    <td className="num tot-col" />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
