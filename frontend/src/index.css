@@ -1,1 +1,59 @@
 @import "tailwindcss";
+
+/* Hide scrollbar but allow scrolling */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Print styles */
+@media print {
+  /* Hide nav, floating bars, selectors */
+  header, .fixed, button[class*="rounded-md"] {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+
+  /* Remove sticky positioning for print */
+  .sticky {
+    position: static !important;
+  }
+
+  /* Ensure tables fit on page */
+  table {
+    font-size: 9px !important;
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+  }
+
+  /* Show all content, no overflow hidden */
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  /* Remove shadows and borders */
+  .shadow-md, [class*="shadow"] {
+    box-shadow: none !important;
+  }
+
+  /* Ensure backgrounds print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Remove bottom padding from mobile adjustments */
+  .pb-16 {
+    padding-bottom: 0 !important;
+  }
+}

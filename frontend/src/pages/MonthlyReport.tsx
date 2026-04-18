@@ -34,7 +34,7 @@ export function MonthlyReport() {
       <div className="flex flex-wrap gap-1 mb-4">
         {FISCAL_MONTHS.map(m => (
           <button key={m} onClick={() => setMonth(m)}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            className={`px-3 py-2.5 min-h-[44px] rounded-md text-sm font-medium transition-colors ${
               month === m ? 'bg-gray-900 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
             }`}>{MONTH_LABELS[m]}</button>
         ))}

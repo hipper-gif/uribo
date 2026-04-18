@@ -218,7 +218,7 @@ export function TargetSetting() {
         <button
           onClick={handleSave}
           disabled={saving || changedCells.size === 0}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+          className={`px-4 py-2.5 min-h-[44px] rounded-md text-sm font-medium transition-colors ${
             changedCells.size > 0
               ? 'bg-blue-600 text-white hover:bg-blue-700'
               : 'bg-gray-200 text-gray-400 cursor-not-allowed'
@@ -229,7 +229,7 @@ export function TargetSetting() {
         <button
           onClick={handleCopyPreviousYear}
           disabled={copying}
-          className="px-4 py-2 rounded-md text-sm font-medium bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+          className="px-4 py-2.5 min-h-[44px] rounded-md text-sm font-medium bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
         >
           {copying ? 'コピー中...' : '前年度の目標をコピー'}
         </button>
@@ -346,6 +346,27 @@ export function TargetSetting() {
               </tr>
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Mobile floating save bar */}
+      {changedCells.size > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 lg:hidden bg-white border-t border-gray-200 px-4 py-2 z-40 shadow-[0_-2px_8px_rgba(0,0,0,0.1)]">
+          <div className="flex items-center justify-between gap-3 max-w-7xl mx-auto">
+            <span className="text-sm text-gray-600">{changedCells.size}件の変更</span>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-6 py-2.5 min-h-[44px] bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors text-sm shrink-0"
+            >
+              {saving ? '保存中...' : '保存'}
+            </button>
+          </div>
+          {saveMessage && (
+            <div className={`mt-1 text-xs text-center ${saveMessage.includes('エラー') ? 'text-red-600' : 'text-green-600'}`}>
+              {saveMessage}
+            </div>
+          )}
         </div>
       )}
     </div>

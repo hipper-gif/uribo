@@ -80,7 +80,7 @@ export function AnnualView() {
           <table className="min-w-full text-xs border-collapse">
             <thead>
               <tr className="bg-gray-100">
-                <th className="sticky left-0 bg-gray-100 px-2 py-2 text-left font-medium text-gray-700 border border-gray-200 min-w-[120px]">科目</th>
+                <th className="sticky left-0 z-20 bg-gray-100 px-2 py-2 text-left font-medium text-gray-700 border border-gray-200 min-w-[120px]">科目</th>
                 {FISCAL_MONTHS.map(m => (
                   <th key={m} className="px-2 py-2 text-right font-medium text-gray-700 border border-gray-200 min-w-[80px]">{MONTH_LABELS[m]}</th>
                 ))}
@@ -89,14 +89,16 @@ export function AnnualView() {
               </tr>
             </thead>
             <tbody>
-              {displayItems.map(item => {
+              {displayItems.map((item, idx) => {
                 const total = getRowTotal(item.id)
                 const avg = total / 12
                 const isSales = item.item_code === 'sales'
                 const isCustomers = item.item_code === 'customers'
+                const prevCategory = idx > 0 ? displayItems[idx - 1].item_category : null
+                const isCategoryBreak = prevCategory !== null && prevCategory !== item.item_category
                 return (
-                  <tr key={item.id} className={`${isSales ? 'bg-blue-50 font-semibold' : ''} hover:bg-gray-50`}>
-                    <td className="sticky left-0 bg-white px-2 py-1.5 border border-gray-200 text-gray-800 font-medium">
+                  <tr key={item.id} className={`${isSales ? 'bg-blue-50 font-semibold' : ''} hover:bg-gray-50 ${isCategoryBreak ? 'border-t-2 border-gray-400' : ''}`}>
+                    <td className="sticky left-0 z-10 bg-white px-2 py-1.5 border border-gray-200 text-gray-800 font-medium">
                       {item.item_name}
                     </td>
                     {FISCAL_MONTHS.map(m => {
@@ -126,7 +128,7 @@ export function AnnualView() {
               })}
               {/* 支出合計行 */}
               <tr className="bg-yellow-50 font-semibold border-t-2 border-gray-400">
-                <td className="sticky left-0 bg-yellow-50 px-2 py-1.5 border border-gray-200">支出合計</td>
+                <td className="sticky left-0 z-10 bg-yellow-50 px-2 py-1.5 border border-gray-200">支出合計</td>
                 {FISCAL_MONTHS.map(m => (
                   <td key={m} className="px-2 py-1.5 text-right border border-gray-200 tabular-nums">
                     {formatAmount(Math.round(getExpenseTotal(m)))}
@@ -141,7 +143,7 @@ export function AnnualView() {
               </tr>
               {/* 純利益行 */}
               <tr className="bg-green-50 font-semibold">
-                <td className="sticky left-0 bg-green-50 px-2 py-1.5 border border-gray-200">純利益</td>
+                <td className="sticky left-0 z-10 bg-green-50 px-2 py-1.5 border border-gray-200">純利益</td>
                 {FISCAL_MONTHS.map(m => {
                   const profit = getSalesAmount(m) - getExpenseTotal(m)
                   return (
@@ -159,7 +161,7 @@ export function AnnualView() {
               </tr>
               {/* 利益率行 */}
               <tr className="bg-green-50">
-                <td className="sticky left-0 bg-green-50 px-2 py-1.5 border border-gray-200 font-medium">利益率</td>
+                <td className="sticky left-0 z-10 bg-green-50 px-2 py-1.5 border border-gray-200 font-medium">利益率</td>
                 {FISCAL_MONTHS.map(m => {
                   const sales = getSalesAmount(m)
                   const profit = sales - getExpenseTotal(m)

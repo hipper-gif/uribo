@@ -291,7 +291,7 @@ export function DataEntry() {
       <div className="flex flex-wrap gap-1 mb-4">
         {FISCAL_MONTHS.map(m => (
           <button key={m} onClick={() => setMonth(m)}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            className={`px-3 py-2.5 min-h-[44px] rounded-md text-sm font-medium transition-colors ${
               month === m ? 'bg-gray-900 text-white' : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
             }`}>{MONTH_LABELS[m]}</button>
         ))}
@@ -416,12 +416,12 @@ export function DataEntry() {
               </div>
             </div>
 
-            {/* Save button */}
+            {/* Save button (desktop) */}
             <div className="sticky top-[340px]">
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="w-full py-2.5 px-4 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors text-sm"
+                className="w-full py-2.5 px-4 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors text-sm min-h-[44px]"
               >
                 {saving ? '保存中...' : '保存'}
               </button>
@@ -436,6 +436,35 @@ export function DataEntry() {
           </div>
         </div>
       )}
+
+      {/* Mobile floating save bar */}
+      <div className="fixed bottom-0 left-0 right-0 lg:hidden bg-white border-t border-gray-200 px-4 py-2 z-40 shadow-[0_-2px_8px_rgba(0,0,0,0.1)]">
+        <div className="flex items-center justify-between gap-3 max-w-7xl mx-auto">
+          <div className="text-xs text-gray-600 truncate">
+            <span className="font-medium">利益: </span>
+            <span className={netProfit < 0 ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>
+              {salesItem && getNumericValue(salesItem.id) ? formatAmount(Math.round(netProfit)) : '-'}
+            </span>
+            <span className="text-gray-400 ml-1">
+              ({salesItem && getNumericValue(salesItem.id) ? formatPercent(profitRate) : '-'})
+            </span>
+          </div>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-6 py-2.5 min-h-[44px] bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors text-sm shrink-0"
+          >
+            {saving ? '保存中...' : '保存'}
+          </button>
+        </div>
+        {message && (
+          <div className={`mt-1 px-3 py-1.5 rounded-md text-xs text-center ${
+            message.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+          }`}>
+            {message.text}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
