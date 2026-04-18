@@ -108,6 +108,9 @@ export function AnnualView() {
     s + EXPENSE_CATEGORIES.reduce((es, cat) =>
       es + (expenseGroups[cat] ?? []).reduce((is, i) => is + (tgtLookup[i.id]?.[m] ?? 0), 0), 0), 0)
 
+  const compareLabel = compareBase === 'target' ? `目標 ${fiscalYear}年度` : compareBase === 'lastyear' ? `昨対 ${fiscalYear - 1}年度実績` : `見通し ${fiscalYear}年度`
+  const hasCmpData = dataType === '実績' && Object.keys(cmpLookup).length > 0
+
   const store = stores.find(s => s.id === storeId)
   const years = Array.from({ length: 6 }, (_, i) => currentFiscalYear() - i)
 
@@ -161,6 +164,11 @@ export function AnnualView() {
 
       {loading ? (
         <div style={{ color: 'var(--ink-3)', padding: '48px 0', textAlign: 'center' }}>読み込み中...</div>
+      ) : data.length === 0 ? (
+        <div style={{ background: 'var(--paper-2)', border: '1px solid var(--rule)', borderRadius: 10, padding: '36px 24px', textAlign: 'center', color: 'var(--ink-3)' }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>{fiscalYear}年度の{dataType}データはありません</div>
+          <div style={{ fontSize: 13 }}>別の年度または「実績」を選択してください</div>
+        </div>
       ) : (
         <>
           {/* KPI Grid */}
@@ -212,7 +220,17 @@ export function AnnualView() {
           <div className="card" style={{ padding: 0 }}>
             <div className="card-head">
               <div className="card-title"><span className="index">TABLE</span>科目別月次ブレイクダウン</div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                {dataType === '実績' && (
+                  <span style={{
+                    fontSize: 11, fontFamily: 'var(--font-mono)', padding: '2px 8px',
+                    borderRadius: 4, border: '1px solid var(--rule)',
+                    color: hasCmpData ? 'var(--accent-ink)' : 'var(--ink-4)',
+                    background: hasCmpData ? 'var(--accent-soft)' : 'transparent'
+                  }}>
+                    VS {compareLabel}{!hasCmpData && ' — データなし'}
+                  </span>
+                )}
                 <span className="smallcaps">単位: 円</span>
                 <button className="btn btn-ghost" onClick={() => setExpanded(new Set(EXPENSE_CATEGORIES))}>すべて展開</button>
                 <button className="btn btn-ghost" onClick={() => setExpanded(new Set())}>折りたたむ</button>
