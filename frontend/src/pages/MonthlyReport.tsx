@@ -203,10 +203,10 @@ export function MonthlyReport() {
                       <td /><td className="num num-dim">{formatMan(pExp)}</td>
                       <td className={`num ${aExp <= pExp ? 'num-pos' : 'num-neg'}`}>{pExp ? formatPercent(aExp/pExp) : '—'}</td>
                     </tr>
-                    <tr className={`profit-row ${aOpProfit < 0 ? 'loss' : ''}`}>
-                      <td className="col-label">営業利益</td>
-                      <td className="num num-target">{formatMan(tProfit)}</td>
-                      <td className="num">{formatMan(aOpProfit)}</td>
+                    <tr className="profit-row">
+                      <td className={`col-label ${aOpProfit < 0 ? 'cell-loss' : ''}`}>営業利益</td>
+                      <td className={`num num-target ${tProfit < 0 ? 'cell-loss' : ''}`}>{formatMan(tProfit)}</td>
+                      <td className={`num ${aOpProfit < 0 ? 'cell-loss' : ''}`}>{formatMan(aOpProfit)}</td>
                       <td className="num">{tProfit ? formatPercent(achP) : '—'}</td>
                       <td /><td className="num num-dim">{formatMan(pOpProfit)}</td>
                       <td className="num">{pOpProfit ? formatPercent(aOpProfit/pOpProfit) : '—'}</td>
@@ -219,10 +219,10 @@ export function MonthlyReport() {
                           <td className="num" style={{ color: 'var(--ink-3)' }}>{formatMan(aMgmt)}</td>
                           <td /><td /><td className="num num-dim">{pMgmt ? formatMan(pMgmt) : '—'}</td><td />
                         </tr>
-                        <tr className={`profit-row ${aProfit < 0 ? 'loss' : ''}`}>
-                          <td className="col-label">純利益</td>
+                        <tr className="profit-row">
+                          <td className={`col-label ${aProfit < 0 ? 'cell-loss' : ''}`}>純利益</td>
                           <td className="num num-target">—</td>
-                          <td className="num">{formatMan(aProfit)}</td>
+                          <td className={`num ${aProfit < 0 ? 'cell-loss' : ''}`}>{formatMan(aProfit)}</td>
                           <td /><td /><td className="num num-dim">{formatMan(pProfit)}</td>
                           <td className="num">{pProfit ? formatPercent(aProfit/pProfit) : '—'}</td>
                         </tr>

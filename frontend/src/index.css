@@ -278,8 +278,9 @@ input { font-family: inherit; }
   border-top: 1px solid var(--rule);
 }
 .ltable tr.profit-row > td.col-label { background: var(--positive-soft); color: oklch(0.30 0.11 150); }
-.ltable tr.profit-row.loss > td { background: var(--negative-soft); color: var(--negative); }
-.ltable tr.profit-row.loss > td.col-label { background: var(--negative-soft); color: oklch(0.32 0.15 25); }
+.ltable tr.profit-row > td.cell-loss { background: var(--negative-soft); color: var(--negative); }
+.ltable tr.profit-row > td.col-label.cell-loss { background: var(--negative-soft); color: oklch(0.32 0.15 25); }
+.ltable tr.rate-row > td.cell-loss { color: var(--negative); }
 
 .ltable tr.rate-row > td { background: var(--paper-2); font-size: 11.5px; color: var(--ink-2); }
 .ltable tr.rate-row > td.col-label { background: var(--paper-2); font-weight: 500; }

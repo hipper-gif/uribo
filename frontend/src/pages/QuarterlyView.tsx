@@ -266,8 +266,8 @@ export function QuarterlyView() {
                       )
                     })}
 
-                    <tr className={`profit-row ${qActualOpProfit < 0 ? 'loss' : ''}`}>
-                      <td className="col-label">営業利益</td>
+                    <tr className="profit-row">
+                      <td className={`col-label ${qActualOpProfit < 0 ? 'cell-loss' : ''}`}>営業利益</td>
                       {q.months.map(m => {
                         const aS = salesItem ? getA(salesItem.id, m) : 0
                         const tS = salesItem ? getT(salesItem.id, m) : 0
@@ -277,14 +277,14 @@ export function QuarterlyView() {
                         const r = tP ? aP / tP : 0
                         return (
                           <Fragment key={m}>
-                            <td className="num num-target">{tS ? formatMan(tP) : '—'}</td>
-                            <td className="num">{aS ? formatMan(aP) : '—'}</td>
+                            <td className={`num num-target ${tP < 0 ? 'cell-loss' : ''}`}>{tS ? formatMan(tP) : '—'}</td>
+                            <td className={`num ${aP < 0 ? 'cell-loss' : ''}`}>{aS ? formatMan(aP) : '—'}</td>
                             <td className={`num ${r >= 1 ? 'num-pos' : r > 0 ? 'num-neg' : 'num-dim'}`}>{tP && aS ? formatPercent(r) : '—'}</td>
                           </Fragment>
                         )
                       })}
                       <td className="num tot-col num-target">{formatMan(qTargetProfit)}</td>
-                      <td className="num tot-col">{formatMan(qActualOpProfit)}</td>
+                      <td className={`num tot-col ${qActualOpProfit < 0 ? 'cell-loss' : ''}`}>{formatMan(qActualOpProfit)}</td>
                       <td className={`num tot-col ${qTargetProfit ? (qActualOpProfit / qTargetProfit >= 1 ? 'num-pos' : 'num-neg') : ''}`}>
                         {qTargetProfit ? formatPercent(qActualOpProfit / qTargetProfit) : '—'}
                       </td>
@@ -307,22 +307,23 @@ export function QuarterlyView() {
                           <td className="num tot-col" style={{ color: 'var(--ink-3)' }}>{formatMan(qActualMgmt)}</td>
                           <td className="num tot-col num-dim">—</td>
                         </tr>
-                        <tr className={`profit-row ${qActualProfit < 0 ? 'loss' : ''}`}>
-                          <td className="col-label">純利益</td>
+                        <tr className="profit-row">
+                          <td className={`col-label ${qActualProfit < 0 ? 'cell-loss' : ''}`}>純利益</td>
                           {q.months.map(m => {
                             const aS = salesItem ? getA(salesItem.id, m) : 0
                             const aE = EXPENSE_CATEGORIES.reduce((s, c) => s + (expenseGroups[c] ?? []).reduce((ss, it) => ss + getA(it.id, m), 0), 0)
                             const f = mgmtFeeItem ? getA(mgmtFeeItem.id, m) : 0
+                            const np = aS - aE - f
                             return (
                               <Fragment key={m}>
                                 <td className="num num-target">—</td>
-                                <td className="num">{aS ? formatMan(aS - aE - f) : '—'}</td>
+                                <td className={`num ${aS && np < 0 ? 'cell-loss' : ''}`}>{aS ? formatMan(np) : '—'}</td>
                                 <td className="num num-dim">—</td>
                               </Fragment>
                             )
                           })}
                           <td className="num tot-col num-target">—</td>
-                          <td className="num tot-col">{formatMan(qActualProfit)}</td>
+                          <td className={`num tot-col ${qActualProfit < 0 ? 'cell-loss' : ''}`}>{formatMan(qActualProfit)}</td>
                           <td className="num tot-col num-dim">—</td>
                         </tr>
                       </>

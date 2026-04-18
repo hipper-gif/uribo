@@ -340,16 +340,16 @@ export function AnnualView() {
                   </tr>
 
                   {/* Operating profit (before mgmt fee) */}
-                  <tr className={`profit-row ${totalOpProfit < 0 ? 'loss' : ''}`}>
-                    <td className="col-label">営業利益</td>
+                  <tr className="profit-row">
+                    <td className={`col-label ${totalOpProfit < 0 ? 'cell-loss' : ''}`}>営業利益</td>
                     {FISCAL_MONTHS.map(m => {
                       const s = getSalesAmount(m)
                       const e = getExpenseTotal(m)
                       const p = s - e
-                      return <td key={m} className="num">{s ? formatMan(p) : '—'}</td>
+                      return <td key={m} className={`num ${s && p < 0 ? 'cell-loss' : ''}`}>{s ? formatMan(p) : '—'}</td>
                     })}
-                    <td className="num tot-col">{formatMan(totalOpProfit)}</td>
-                    <td className="num tot-col">{formatMan(totalOpProfit / 12)}</td>
+                    <td className={`num tot-col ${totalOpProfit < 0 ? 'cell-loss' : ''}`}>{formatMan(totalOpProfit)}</td>
+                    <td className={`num tot-col ${totalOpProfit < 0 ? 'cell-loss' : ''}`}>{formatMan(totalOpProfit / 12)}</td>
                   </tr>
 
                   {/* Management fee (Twinkle代) */}
@@ -367,17 +367,17 @@ export function AnnualView() {
 
                   {/* Net profit (after mgmt fee) */}
                   {totalMgmtFee > 0 && (
-                    <tr className={`profit-row ${totalNetProfit < 0 ? 'loss' : ''}`}>
-                      <td className="col-label">純利益</td>
+                    <tr className="profit-row">
+                      <td className={`col-label ${totalNetProfit < 0 ? 'cell-loss' : ''}`}>純利益</td>
                       {FISCAL_MONTHS.map(m => {
                         const s = getSalesAmount(m)
                         const e = getExpenseTotal(m)
                         const f = getMgmtFee(m)
                         const p = s - e - f
-                        return <td key={m} className="num">{s ? formatMan(p) : '—'}</td>
+                        return <td key={m} className={`num ${s && p < 0 ? 'cell-loss' : ''}`}>{s ? formatMan(p) : '—'}</td>
                       })}
-                      <td className="num tot-col">{formatMan(totalNetProfit)}</td>
-                      <td className="num tot-col">{formatMan(totalNetProfit / 12)}</td>
+                      <td className={`num tot-col ${totalNetProfit < 0 ? 'cell-loss' : ''}`}>{formatMan(totalNetProfit)}</td>
+                      <td className={`num tot-col ${totalNetProfit < 0 ? 'cell-loss' : ''}`}>{formatMan(totalNetProfit / 12)}</td>
                     </tr>
                   )}
 
@@ -390,7 +390,7 @@ export function AnnualView() {
                       const f = getMgmtFee(m)
                       const net = s - e - f
                       const r = s ? net / s : 0
-                      return <td key={m} className="num">{s ? formatPercent(r) : '—'}</td>
+                      return <td key={m} className={`num ${r < 0 ? 'cell-loss' : ''}`}>{s ? formatPercent(r) : '—'}</td>
                     })}
                     <td className="num tot-col">{totalSales ? formatPercent(totalNetProfit / totalSales) : '—'}</td>
                     <td className="num tot-col" />
