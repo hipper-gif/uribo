@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
-import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, currentFiscalYear, formatAmount, formatPercent, formatMan } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatAmount, formatPercent, formatMan } from '../lib/types'
 import type { DataType } from '../lib/types'
 
 type CompareBase = 'target' | 'lastyear' | 'forecast'
@@ -24,7 +24,7 @@ export function AnnualView() {
   const { data: compareData } = useMonthlyData(storeId, compareFY, compareDataType ?? compareActualType)
 
   const displayItems = useMemo(() =>
-    items.filter(i => !i.is_calculated).sort((a, b) => a.sort_order - b.sort_order), [items])
+    items.filter(i => !i.is_calculated && i.item_code !== MGMT_FEE_CODE).sort((a, b) => a.sort_order - b.sort_order), [items])
 
   const salesItems = useMemo(() =>
     displayItems.filter(i => i.item_category === '売上'), [displayItems])
@@ -40,6 +40,7 @@ export function AnnualView() {
 
   const salesItem = useMemo(() => items.find(i => i.item_code === 'sales'), [items])
   const customersItem = useMemo(() => items.find(i => i.item_code === 'customers'), [items])
+  const mgmtFeeItem = useMemo(() => items.find(i => i.item_code === MGMT_FEE_CODE), [items])
 
   // Lookup helpers
   const lookup = useMemo(() => {
@@ -96,10 +97,17 @@ export function AnnualView() {
     setExpanded(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n })
   }
 
+  // Management fee helpers
+  function getMgmtFee(month: number): number {
+    return mgmtFeeItem ? getVal(mgmtFeeItem.id, month) : 0
+  }
+
   // KPI totals
   const totalSales = FISCAL_MONTHS.reduce((s, m) => s + getSalesAmount(m), 0)
   const totalExp = FISCAL_MONTHS.reduce((s, m) => s + getExpenseTotal(m), 0)
-  const totalProfit = totalSales - totalExp
+  const totalMgmtFee = FISCAL_MONTHS.reduce((s, m) => s + getMgmtFee(m), 0)
+  const totalOpProfit = totalSales - totalExp
+  const totalNetProfit = totalOpProfit - totalMgmtFee
   const totalCust = customersItem ? FISCAL_MONTHS.reduce((s, m) => s + getVal(customersItem.id, m), 0) : 0
   const activeMonths = FISCAL_MONTHS.filter(m => getSalesAmount(m) > 0).length
 
@@ -199,13 +207,14 @@ export function AnnualView() {
               </div>
             </div>
             <div className="kpi">
-              <div className="kpi-label">純利益 · YTD</div>
-              <div className="kpi-value">{formatMan(totalProfit)}<span className="unit">円</span></div>
+              <div className="kpi-label">営業利益 · YTD</div>
+              <div className="kpi-value">{formatMan(totalOpProfit)}<span className="unit">円</span></div>
               <div className="kpi-meta">
-                <span className={`kpi-delta ${totalProfit >= 0 ? 'pos' : 'neg'}`}>
-                  {totalSales ? formatPercent(totalProfit / totalSales) : '—'}
+                <span className={`kpi-delta ${totalOpProfit >= 0 ? 'pos' : 'neg'}`}>
+                  {totalSales ? formatPercent(totalOpProfit / totalSales) : '—'}
                 </span>
                 <span>利益率</span>
+                {totalMgmtFee > 0 && <span style={{ marginLeft: 8, color: 'var(--ink-3)' }}>純利益 {formatMan(totalNetProfit)}</span>}
               </div>
             </div>
             <div className="kpi">
@@ -330,18 +339,47 @@ export function AnnualView() {
                     <td className="num tot-col num-muted">{formatMan(totalExp / 12)}</td>
                   </tr>
 
-                  {/* Profit */}
-                  <tr className={`profit-row ${totalProfit < 0 ? 'loss' : ''}`}>
-                    <td className="col-label">純利益</td>
+                  {/* Operating profit (before mgmt fee) */}
+                  <tr className={`profit-row ${totalOpProfit < 0 ? 'loss' : ''}`}>
+                    <td className="col-label">営業利益</td>
                     {FISCAL_MONTHS.map(m => {
                       const s = getSalesAmount(m)
                       const e = getExpenseTotal(m)
                       const p = s - e
                       return <td key={m} className="num">{s ? formatMan(p) : '—'}</td>
                     })}
-                    <td className="num tot-col">{formatMan(totalProfit)}</td>
-                    <td className="num tot-col">{formatMan(totalProfit / 12)}</td>
+                    <td className="num tot-col">{formatMan(totalOpProfit)}</td>
+                    <td className="num tot-col">{formatMan(totalOpProfit / 12)}</td>
                   </tr>
+
+                  {/* Management fee (Twinkle代) */}
+                  {totalMgmtFee > 0 && (
+                    <tr className="mgmt-fee-row">
+                      <td className="col-label" style={{ paddingLeft: 24, color: 'var(--ink-3)' }}>Twinkle代</td>
+                      {FISCAL_MONTHS.map(m => {
+                        const f = getMgmtFee(m)
+                        return <td key={m} className="num" style={{ color: 'var(--ink-3)' }}>{f ? formatMan(f) : '—'}</td>
+                      })}
+                      <td className="num tot-col" style={{ color: 'var(--ink-3)' }}>{formatMan(totalMgmtFee)}</td>
+                      <td className="num tot-col num-muted">{formatMan(totalMgmtFee / 12)}</td>
+                    </tr>
+                  )}
+
+                  {/* Net profit (after mgmt fee) */}
+                  {totalMgmtFee > 0 && (
+                    <tr className={`profit-row ${totalNetProfit < 0 ? 'loss' : ''}`}>
+                      <td className="col-label">純利益</td>
+                      {FISCAL_MONTHS.map(m => {
+                        const s = getSalesAmount(m)
+                        const e = getExpenseTotal(m)
+                        const f = getMgmtFee(m)
+                        const p = s - e - f
+                        return <td key={m} className="num">{s ? formatMan(p) : '—'}</td>
+                      })}
+                      <td className="num tot-col">{formatMan(totalNetProfit)}</td>
+                      <td className="num tot-col">{formatMan(totalNetProfit / 12)}</td>
+                    </tr>
+                  )}
 
                   {/* Profit rate */}
                   <tr className="rate-row">
@@ -349,10 +387,12 @@ export function AnnualView() {
                     {FISCAL_MONTHS.map(m => {
                       const s = getSalesAmount(m)
                       const e = getExpenseTotal(m)
-                      const r = s ? (s - e) / s : 0
+                      const f = getMgmtFee(m)
+                      const net = s - e - f
+                      const r = s ? net / s : 0
                       return <td key={m} className="num">{s ? formatPercent(r) : '—'}</td>
                     })}
-                    <td className="num tot-col">{totalSales ? formatPercent(totalProfit / totalSales) : '—'}</td>
+                    <td className="num tot-col">{totalSales ? formatPercent(totalNetProfit / totalSales) : '—'}</td>
                     <td className="num tot-col" />
                   </tr>
                 </tbody>

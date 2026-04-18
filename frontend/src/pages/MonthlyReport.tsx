@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
-import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, currentFiscalYear, formatPercent, formatMan } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan } from '../lib/types'
 
 export function MonthlyReport() {
   const stores = useStores()
@@ -14,7 +14,7 @@ export function MonthlyReport() {
   const { data: targetData } = useMonthlyData(storeId, fiscalYear, '目標')
 
   const displayItems = useMemo(() =>
-    items.filter(i => !i.is_calculated).sort((a, b) => a.sort_order - b.sort_order), [items])
+    items.filter(i => !i.is_calculated && i.item_code !== MGMT_FEE_CODE).sort((a, b) => a.sort_order - b.sort_order), [items])
   const salesItems = useMemo(() =>
     displayItems.filter(i => i.item_category === '売上'), [displayItems])
   const expenseGroups = useMemo(() => {
@@ -39,6 +39,7 @@ export function MonthlyReport() {
 
   const salesItem = items.find(i => i.item_code === 'sales')
   const customersItem = items.find(i => i.item_code === 'customers')
+  const mgmtFeeItem = items.find(i => i.item_code === MGMT_FEE_CODE)
   const getA = (id: number, m: number) => aLookup[id]?.[m] ?? 0
   const getT = (id: number, m: number) => tLookup[id]?.[m] ?? 0
   const prevMonth = month === 4 ? 3 : month - 1
@@ -49,11 +50,14 @@ export function MonthlyReport() {
   const aSales = salesItem ? getA(salesItem.id, month) : 0
   const pSales = salesItem ? getA(salesItem.id, prevMonth) : 0
   const tExp = allExp(tLookup, month), aExp = allExp(aLookup, month), pExp = allExp(aLookup, prevMonth)
-  const tProfit = tSales - tExp, aProfit = aSales - aExp, pProfit = pSales - pExp
+  const aMgmt = mgmtFeeItem ? getA(mgmtFeeItem.id, month) : 0
+  const pMgmt = mgmtFeeItem ? getA(mgmtFeeItem.id, prevMonth) : 0
+  const tProfit = tSales - tExp, aOpProfit = aSales - aExp, aProfit = aOpProfit - aMgmt
+  const pOpProfit = pSales - pExp, pProfit = pOpProfit - pMgmt
   const aCust = customersItem ? getA(customersItem.id, month) : 0
   const tCust = customersItem ? getT(customersItem.id, month) : 0
   const aUnit = aCust ? aSales / aCust : 0, tUnit = tCust ? tSales / tCust : 0
-  const achS = tSales ? aSales / tSales : 0, achE = tExp ? aExp / tExp : 0, achP = tProfit ? aProfit / tProfit : 0
+  const achS = tSales ? aSales / tSales : 0, achE = tExp ? aExp / tExp : 0, achP = tProfit ? aOpProfit / tProfit : 0
 
   const toggle = (cat: string) => { setExpanded(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n }) }
   const store = storeId === 0 ? { name: '全店舗' } : stores.find(s => s.id === storeId)
@@ -118,11 +122,11 @@ export function MonthlyReport() {
               </div>
             </div>
             <div className="kpi">
-              <div className="kpi-label">純利益</div>
-              <div className="kpi-value">{formatMan(aProfit)}<span className="unit">円</span></div>
+              <div className="kpi-label">営業利益</div>
+              <div className="kpi-value">{formatMan(aOpProfit)}<span className="unit">円</span></div>
               <div className="kpi-meta">
                 {tProfit !== 0 && <span className={`kpi-delta ${achP >= 1 ? 'pos' : 'neg'}`}>{achP >= 1 ? '▲' : '▼'} {Math.abs((achP-1)*100).toFixed(1)}%</span>}
-                <span>{aSales ? `利益率 ${formatPercent(aProfit/aSales)}` : ''}</span>
+                {aMgmt > 0 && <span style={{ color: 'var(--ink-3)' }}>純利益 {formatMan(aProfit)}</span>}
               </div>
             </div>
           </div>
@@ -199,14 +203,31 @@ export function MonthlyReport() {
                       <td /><td className="num num-dim">{formatMan(pExp)}</td>
                       <td className={`num ${aExp <= pExp ? 'num-pos' : 'num-neg'}`}>{pExp ? formatPercent(aExp/pExp) : '—'}</td>
                     </tr>
-                    <tr className={`profit-row ${aProfit < 0 ? 'loss' : ''}`}>
-                      <td className="col-label">純利益</td>
+                    <tr className={`profit-row ${aOpProfit < 0 ? 'loss' : ''}`}>
+                      <td className="col-label">営業利益</td>
                       <td className="num num-target">{formatMan(tProfit)}</td>
-                      <td className="num">{formatMan(aProfit)}</td>
+                      <td className="num">{formatMan(aOpProfit)}</td>
                       <td className="num">{tProfit ? formatPercent(achP) : '—'}</td>
-                      <td /><td className="num num-dim">{formatMan(pProfit)}</td>
-                      <td className="num">{pProfit ? formatPercent(aProfit/pProfit) : '—'}</td>
+                      <td /><td className="num num-dim">{formatMan(pOpProfit)}</td>
+                      <td className="num">{pOpProfit ? formatPercent(aOpProfit/pOpProfit) : '—'}</td>
                     </tr>
+                    {aMgmt > 0 && (
+                      <>
+                        <tr className="mgmt-fee-row">
+                          <td className="col-label" style={{ paddingLeft: 24, color: 'var(--ink-3)' }}>Twinkle代</td>
+                          <td className="num num-target" style={{ color: 'var(--ink-3)' }}>—</td>
+                          <td className="num" style={{ color: 'var(--ink-3)' }}>{formatMan(aMgmt)}</td>
+                          <td /><td /><td className="num num-dim">{pMgmt ? formatMan(pMgmt) : '—'}</td><td />
+                        </tr>
+                        <tr className={`profit-row ${aProfit < 0 ? 'loss' : ''}`}>
+                          <td className="col-label">純利益</td>
+                          <td className="num num-target">—</td>
+                          <td className="num">{formatMan(aProfit)}</td>
+                          <td /><td /><td className="num num-dim">{formatMan(pProfit)}</td>
+                          <td className="num">{pProfit ? formatPercent(aProfit/pProfit) : '—'}</td>
+                        </tr>
+                      </>
+                    )}
                     <tr className="rate-row">
                       <td className="col-label">利益率</td>
                       <td className="num num-target">{tSales ? formatPercent(tProfit/tSales) : '—'}</td>

@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
-import { MONTH_LABELS, EXPENSE_CATEGORIES, currentFiscalYear, formatPercent, formatMan } from '../lib/types'
+import { MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan } from '../lib/types'
 
 const QUARTERS = [
   { label: 'Q1', months: [4, 5, 6], sub: '4 – 6月' },
@@ -21,7 +21,7 @@ export function QuarterlyView() {
   const { data: targetData } = useMonthlyData(storeId, fiscalYear, '目標')
 
   const displayItems = useMemo(() =>
-    items.filter(i => !i.is_calculated).sort((a, b) => a.sort_order - b.sort_order), [items])
+    items.filter(i => !i.is_calculated && i.item_code !== MGMT_FEE_CODE).sort((a, b) => a.sort_order - b.sort_order), [items])
 
   const salesItems = useMemo(() =>
     displayItems.filter(i => i.item_category === '売上'), [displayItems])
@@ -54,6 +54,7 @@ export function QuarterlyView() {
   }, [targetData])
 
   const salesItem = items.find(i => i.item_code === 'sales')
+  const mgmtFeeItem = items.find(i => i.item_code === MGMT_FEE_CODE)
   const q = QUARTERS[quarter]
 
   const getA = (itemId: number, m: number) => aLookup[itemId]?.[m] ?? 0
@@ -63,11 +64,15 @@ export function QuarterlyView() {
   const qSumCat = (cat: string, lk: typeof aLookup) => (expenseGroups[cat] ?? []).reduce((s, it) => s + qSumItem(it.id, lk), 0)
   const qAllExp = (lk: typeof aLookup) => EXPENSE_CATEGORIES.reduce((s, c) => s + qSumCat(c, lk), 0)
 
+  const qMgmtFee = (lk: typeof aLookup) => mgmtFeeItem ? qSumItem(mgmtFeeItem.id, lk) : 0
+
   const qActualSales = salesItem ? qSumItem(salesItem.id, aLookup) : 0
   const qTargetSales = salesItem ? qSumItem(salesItem.id, tLookup) : 0
   const qActualExp = qAllExp(aLookup)
   const qTargetExp = qAllExp(tLookup)
-  const qActualProfit = qActualSales - qActualExp
+  const qActualMgmt = qMgmtFee(aLookup)
+  const qActualOpProfit = qActualSales - qActualExp
+  const qActualProfit = qActualOpProfit - qActualMgmt
   const qTargetProfit = qTargetSales - qTargetExp
   const salesAch = qTargetSales ? qActualSales / qTargetSales : 0
 
@@ -139,15 +144,15 @@ export function QuarterlyView() {
               </div>
             </div>
             <div className="kpi">
-              <div className="kpi-label">純利益</div>
-              <div className="kpi-value">{formatMan(qActualProfit)}<span className="unit">円</span></div>
+              <div className="kpi-label">営業利益</div>
+              <div className="kpi-value">{formatMan(qActualOpProfit)}<span className="unit">円</span></div>
               <div className="kpi-meta">
                 {qTargetProfit !== 0 && (
-                  <span className={`kpi-delta ${qActualProfit / qTargetProfit >= 1 ? 'pos' : 'neg'}`}>
-                    {qActualProfit / qTargetProfit >= 1 ? '▲' : '▼'} {Math.abs(((qActualProfit / qTargetProfit) - 1) * 100).toFixed(1)}%
+                  <span className={`kpi-delta ${qActualOpProfit / qTargetProfit >= 1 ? 'pos' : 'neg'}`}>
+                    {qActualOpProfit / qTargetProfit >= 1 ? '▲' : '▼'} {Math.abs(((qActualOpProfit / qTargetProfit) - 1) * 100).toFixed(1)}%
                   </span>
                 )}
-                <span>目標 {formatMan(qTargetProfit)}円</span>
+                {qActualMgmt > 0 && <span style={{ color: 'var(--ink-3)' }}>純利益 {formatMan(qActualProfit)}</span>}
               </div>
             </div>
             <div className="kpi">
@@ -261,8 +266,8 @@ export function QuarterlyView() {
                       )
                     })}
 
-                    <tr className={`profit-row ${qActualProfit < 0 ? 'loss' : ''}`}>
-                      <td className="col-label">純利益</td>
+                    <tr className={`profit-row ${qActualOpProfit < 0 ? 'loss' : ''}`}>
+                      <td className="col-label">営業利益</td>
                       {q.months.map(m => {
                         const aS = salesItem ? getA(salesItem.id, m) : 0
                         const tS = salesItem ? getT(salesItem.id, m) : 0
@@ -279,11 +284,49 @@ export function QuarterlyView() {
                         )
                       })}
                       <td className="num tot-col num-target">{formatMan(qTargetProfit)}</td>
-                      <td className="num tot-col">{formatMan(qActualProfit)}</td>
-                      <td className={`num tot-col ${qTargetProfit ? (qActualProfit / qTargetProfit >= 1 ? 'num-pos' : 'num-neg') : ''}`}>
-                        {qTargetProfit ? formatPercent(qActualProfit / qTargetProfit) : '—'}
+                      <td className="num tot-col">{formatMan(qActualOpProfit)}</td>
+                      <td className={`num tot-col ${qTargetProfit ? (qActualOpProfit / qTargetProfit >= 1 ? 'num-pos' : 'num-neg') : ''}`}>
+                        {qTargetProfit ? formatPercent(qActualOpProfit / qTargetProfit) : '—'}
                       </td>
                     </tr>
+                    {qActualMgmt > 0 && (
+                      <>
+                        <tr className="mgmt-fee-row">
+                          <td className="col-label" style={{ paddingLeft: 24, color: 'var(--ink-3)' }}>Twinkle代</td>
+                          {q.months.map(m => {
+                            const f = mgmtFeeItem ? getA(mgmtFeeItem.id, m) : 0
+                            return (
+                              <Fragment key={m}>
+                                <td className="num num-target" style={{ color: 'var(--ink-3)' }}>—</td>
+                                <td className="num" style={{ color: 'var(--ink-3)' }}>{f ? formatMan(f) : '—'}</td>
+                                <td className="num num-dim">—</td>
+                              </Fragment>
+                            )
+                          })}
+                          <td className="num tot-col num-target" style={{ color: 'var(--ink-3)' }}>—</td>
+                          <td className="num tot-col" style={{ color: 'var(--ink-3)' }}>{formatMan(qActualMgmt)}</td>
+                          <td className="num tot-col num-dim">—</td>
+                        </tr>
+                        <tr className={`profit-row ${qActualProfit < 0 ? 'loss' : ''}`}>
+                          <td className="col-label">純利益</td>
+                          {q.months.map(m => {
+                            const aS = salesItem ? getA(salesItem.id, m) : 0
+                            const aE = EXPENSE_CATEGORIES.reduce((s, c) => s + (expenseGroups[c] ?? []).reduce((ss, it) => ss + getA(it.id, m), 0), 0)
+                            const f = mgmtFeeItem ? getA(mgmtFeeItem.id, m) : 0
+                            return (
+                              <Fragment key={m}>
+                                <td className="num num-target">—</td>
+                                <td className="num">{aS ? formatMan(aS - aE - f) : '—'}</td>
+                                <td className="num num-dim">—</td>
+                              </Fragment>
+                            )
+                          })}
+                          <td className="num tot-col num-target">—</td>
+                          <td className="num tot-col">{formatMan(qActualProfit)}</td>
+                          <td className="num tot-col num-dim">—</td>
+                        </tr>
+                      </>
+                    )}
                   </tbody>
                 </table>
               </div>

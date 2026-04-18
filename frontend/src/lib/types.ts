@@ -23,6 +23,7 @@ export interface BeautyEmployeeMonthly {
 }
 
 export const EXPENSE_CATEGORIES: ItemCategory[] = ['仕入', '人件費', '法定福利', '固定費', '税金', 'その他']
+export const MGMT_FEE_CODE = 'twinkle_fee'
 
 // Fiscal year months in order
 export const FISCAL_MONTHS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3] as const
