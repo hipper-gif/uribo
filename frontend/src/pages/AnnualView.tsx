@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
 import { StoreYearSelector } from '../components/StoreYearSelector'
-import { FISCAL_MONTHS, MONTH_LABELS, currentFiscalYear, formatAmount, formatPercent } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, currentFiscalYear, formatAmount, formatPercent } from '../lib/types'
 import type { DataType } from '../lib/types'
 
 export function AnnualView() {
@@ -10,12 +10,11 @@ export function AnnualView() {
   const [storeId, setStoreId] = useState(1)
   const [fiscalYear, setFiscalYear] = useState(currentFiscalYear())
   const [dataType, setDataType] = useState<DataType>('実績')
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
 
   const { data, loading } = useMonthlyData(storeId, fiscalYear, dataType)
-  // Also load 目標 for comparison when viewing 実績
   const { data: targetData } = useMonthlyData(storeId, fiscalYear, dataType === '実績' ? '目標' : undefined)
 
-  // Build lookup: item_id -> month -> amount
   const lookup = useMemo(() => {
     const map: Record<number, Record<number, number>> = {}
     for (const d of data) {
@@ -35,36 +34,55 @@ export function AnnualView() {
     return map
   }, [targetData, dataType])
 
-  // Calculated items
-  const calcItems = useMemo(() => {
-    // Find sales and customers item IDs
-    const salesItem = items.find(i => i.item_code === 'sales')
-    const custItem = items.find(i => i.item_code === 'customers')
-    return { salesItem, custItem }
-  }, [items])
+  const displayItems = useMemo(() =>
+    items.filter(i => !i.is_calculated).sort((a, b) => a.sort_order - b.sort_order), [items])
 
-  // Display items - non-calculated, sorted
-  const displayItems = useMemo(() => {
-    return items.filter(i => !i.is_calculated).sort((a, b) => a.sort_order - b.sort_order)
-  }, [items])
+  const salesItems = useMemo(() =>
+    displayItems.filter(i => i.item_category === '売上'), [displayItems])
 
-  // Calculate totals
-  function getRowTotal(itemId: number): number {
-    return FISCAL_MONTHS.reduce((sum, m) => sum + (lookup[itemId]?.[m] ?? 0), 0)
+  const expenseGroups = useMemo(() => {
+    const groups: Record<string, typeof displayItems> = {}
+    for (const cat of EXPENSE_CATEGORIES) {
+      const catItems = displayItems.filter(i => i.item_category === cat)
+      if (catItems.length > 0) groups[cat] = catItems
+    }
+    return groups
+  }, [displayItems])
+
+  const salesItem = useMemo(() => items.find(i => i.item_code === 'sales'), [items])
+
+  function getVal(itemId: number, month: number): number {
+    return lookup[itemId]?.[month] ?? 0
   }
 
-  // Calculate 支出合計 for a month
+  function getRowTotal(itemId: number): number {
+    return FISCAL_MONTHS.reduce((sum, m) => sum + getVal(itemId, m), 0)
+  }
+
+  function getCatTotal(cat: string, month: number): number {
+    return (expenseGroups[cat] ?? []).reduce((sum, i) => sum + getVal(i.id, month), 0)
+  }
+
+  function getCatTargetTotal(cat: string, month: number): number {
+    return (expenseGroups[cat] ?? []).reduce((sum, i) => sum + (targetLookup[i.id]?.[month] ?? 0), 0)
+  }
+
   function getExpenseTotal(month: number): number {
-    const expenseCategories = ['仕入', '人件費', '法定福利', '固定費', '税金', 'その他']
-    return displayItems
-      .filter(i => expenseCategories.includes(i.item_category))
-      .reduce((sum, i) => sum + (lookup[i.id]?.[month] ?? 0), 0)
+    return EXPENSE_CATEGORIES.reduce((sum, cat) => sum + getCatTotal(cat, month), 0)
   }
 
   function getSalesAmount(month: number): number {
-    return calcItems.salesItem ? (lookup[calcItems.salesItem.id]?.[month] ?? 0) : 0
+    return salesItem ? getVal(salesItem.id, month) : 0
   }
 
+  const toggleCategory = (cat: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev)
+      if (next.has(cat)) next.delete(cat)
+      else next.add(cat)
+      return next
+    })
+  }
 
   return (
     <div>
@@ -89,20 +107,19 @@ export function AnnualView() {
               </tr>
             </thead>
             <tbody>
-              {displayItems.map((item, idx) => {
+              {/* 売上系: 常に個別表示 */}
+              {salesItems.map(item => {
                 const total = getRowTotal(item.id)
                 const avg = total / 12
                 const isSales = item.item_code === 'sales'
                 const isCustomers = item.item_code === 'customers'
-                const prevCategory = idx > 0 ? displayItems[idx - 1].item_category : null
-                const isCategoryBreak = prevCategory !== null && prevCategory !== item.item_category
                 return (
-                  <tr key={item.id} className={`${isSales ? 'bg-blue-50 font-semibold' : ''} hover:bg-gray-50 ${isCategoryBreak ? 'border-t-2 border-gray-400' : ''}`}>
+                  <tr key={item.id} className={`${isSales ? 'bg-blue-50 font-semibold' : ''} hover:bg-gray-50`}>
                     <td className="sticky left-0 z-10 bg-white px-2 py-1.5 border border-gray-200 text-gray-800 font-medium">
                       {item.item_name}
                     </td>
                     {FISCAL_MONTHS.map(m => {
-                      const val = lookup[item.id]?.[m] ?? 0
+                      const val = getVal(item.id, m)
                       const tgt = targetLookup[item.id]?.[m]
                       const showComparison = dataType === '実績' && tgt !== undefined && val !== 0
                       const achievement = showComparison && tgt ? val / tgt : null
@@ -126,6 +143,78 @@ export function AnnualView() {
                   </tr>
                 )
               })}
+
+              {/* 経費カテゴリ: アコーディオン */}
+              {EXPENSE_CATEGORIES.map(cat => {
+                const catItems = expenseGroups[cat]
+                if (!catItems || catItems.length === 0) return null
+                const isExpanded = expandedCategories.has(cat)
+                const catAnnualTotal = FISCAL_MONTHS.reduce((s, m) => s + getCatTotal(cat, m), 0)
+
+                return (
+                  <tbody key={cat}>
+                    {/* カテゴリ小計行 */}
+                    <tr
+                      className="bg-gray-100 cursor-pointer hover:bg-gray-200 border-t-2 border-gray-300 select-none"
+                      onClick={() => toggleCategory(cat)}
+                    >
+                      <td className="sticky left-0 z-10 bg-gray-100 px-2 py-1.5 border border-gray-200 font-semibold text-gray-700">
+                        <span className="inline-block w-4 text-gray-400">{isExpanded ? '▼' : '▶'}</span>
+                        {cat}
+                      </td>
+                      {FISCAL_MONTHS.map(m => {
+                        const val = getCatTotal(cat, m)
+                        const tgt = dataType === '実績' ? getCatTargetTotal(cat, m) : 0
+                        const achievement = tgt && val ? val / tgt : null
+                        return (
+                          <td key={m} className="px-2 py-1.5 text-right border border-gray-200 tabular-nums font-medium">
+                            <div>{val ? formatAmount(Math.round(val)) : '-'}</div>
+                            {achievement !== null && (
+                              <div className={`text-[10px] ${achievement >= 1 ? 'text-green-600' : 'text-red-500'}`}>
+                                {formatPercent(achievement)}
+                              </div>
+                            )}
+                          </td>
+                        )
+                      })}
+                      <td className="px-2 py-1.5 text-right border border-gray-200 bg-gray-200 font-semibold tabular-nums">
+                        {catAnnualTotal ? formatAmount(Math.round(catAnnualTotal)) : '-'}
+                      </td>
+                      <td className="px-2 py-1.5 text-right border border-gray-200 bg-gray-200 tabular-nums">
+                        {catAnnualTotal ? formatAmount(Math.round(catAnnualTotal / 12)) : '-'}
+                      </td>
+                    </tr>
+
+                    {/* 展開時: 個別科目 */}
+                    {isExpanded && catItems.map(item => {
+                      const total = getRowTotal(item.id)
+                      const avg = total / 12
+                      return (
+                        <tr key={item.id} className="hover:bg-gray-50">
+                          <td className="sticky left-0 z-10 bg-white px-2 py-1.5 pl-7 border border-gray-200 text-gray-600 text-[11px]">
+                            {item.item_name}
+                          </td>
+                          {FISCAL_MONTHS.map(m => {
+                            const val = getVal(item.id, m)
+                            return (
+                              <td key={m} className="px-2 py-1.5 text-right border border-gray-200 tabular-nums text-gray-600">
+                                {val ? formatAmount(Math.round(val)) : '-'}
+                              </td>
+                            )
+                          })}
+                          <td className="px-2 py-1.5 text-right border border-gray-200 bg-gray-50 tabular-nums text-gray-600">
+                            {total ? formatAmount(Math.round(total)) : '-'}
+                          </td>
+                          <td className="px-2 py-1.5 text-right border border-gray-200 bg-gray-50 tabular-nums text-gray-600">
+                            {total ? formatAmount(Math.round(avg)) : '-'}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                )
+              })}
+
               {/* 支出合計行 */}
               <tr className="bg-yellow-50 font-semibold border-t-2 border-gray-400">
                 <td className="sticky left-0 z-10 bg-yellow-50 px-2 py-1.5 border border-gray-200">支出合計</td>
