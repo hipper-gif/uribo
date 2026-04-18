@@ -168,7 +168,7 @@ export function QuarterlyView() {
                 <div className="card-title"><span className="index">TABLE</span>月次 × 科目</div>
                 <span className="smallcaps">単位: 円</span>
               </div>
-              <div style={{ overflowX: 'auto' }}>
+              <div style={{ overflowX: 'auto', overflowY: 'clip' }}>
                 <table className="ltable">
                   <thead>
                     <tr>

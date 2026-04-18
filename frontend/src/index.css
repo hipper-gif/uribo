@@ -208,7 +208,7 @@ input { font-family: inherit; }
 /* ── Cards ── */
 .card {
   background: var(--paper); border: 1px solid var(--rule);
-  border-radius: var(--radius-lg); overflow: hidden;
+  border-radius: var(--radius-lg); overflow: clip;
 }
 .card-head {
   padding: 14px 18px;

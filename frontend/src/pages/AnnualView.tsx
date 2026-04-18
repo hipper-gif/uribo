@@ -261,7 +261,7 @@ export function AnnualView() {
                 <button className="btn btn-ghost" onClick={() => setExpanded(new Set())}>折りたたむ</button>
               </div>
             </div>
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflowX: 'auto', overflowY: 'clip' }}>
               <table className="ltable">
                 <thead>
                   <tr>
