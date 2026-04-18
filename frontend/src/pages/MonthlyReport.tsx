@@ -137,7 +137,7 @@ export function MonthlyReport() {
                 <div className="card-title"><span className="index">DETAIL</span>{MONTH_LABELS[month]}の科目一覧</div>
                 <span className="smallcaps">目標 · 実績 · 前月比</span>
               </div>
-              <div style={{ overflowX: 'auto', overflowY: 'clip' }}>
+              <div className="table-scroll">
                 <table className="ltable">
                   <thead><tr>
                     <th className="col-label">科目</th>

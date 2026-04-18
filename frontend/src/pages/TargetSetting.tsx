@@ -194,7 +194,7 @@ export function TargetSetting() {
               <div className="card-title"><span className="index">GRID</span>目標入力 · 全科目 × 全月</div>
               <span className="smallcaps">単位: 円 · TABでセル移動</span>
             </div>
-            <div style={{ overflowX: 'auto', overflowY: 'clip' }}>
+            <div className="table-scroll">
               <table className="ltable">
                 <thead>
                   <tr>

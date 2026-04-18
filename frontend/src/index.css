@@ -239,7 +239,14 @@ input { font-family: inherit; }
   font-weight: 500; font-size: 11px; letter-spacing: 0.04em;
   text-transform: uppercase; font-family: var(--font-mono);
   border-bottom: 1px solid var(--rule);
-  position: sticky; top: 56px; z-index: 2;
+  position: sticky; top: 0; z-index: 2;
+}
+
+/* Table scroll container — owns both x and y scroll so sticky thead works */
+.table-scroll {
+  overflow: auto;
+  max-height: calc(100vh - 380px);
+  min-height: 240px;
 }
 .ltable th.col-label, .ltable td.col-label {
   text-align: left; font-family: var(--font-sans);
