@@ -400,6 +400,19 @@ input { font-family: inherit; }
 .cell-input::placeholder { color: var(--ink-4); }
 .cell-changed { background: oklch(0.97 0.05 80); }
 
+/* Meta cells (STAFF & NOTES) */
+.meta-num-input { text-align: center; }
+.meta-textarea {
+  width: 100%; min-height: 56px; resize: vertical;
+  padding: 4px 6px; border: 0; background: transparent;
+  font: inherit; font-size: 11.5px; line-height: 1.4;
+  color: var(--ink); border-radius: 4px; outline: none;
+  box-sizing: border-box; white-space: pre-wrap;
+}
+.meta-textarea:focus { background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.meta-textarea::placeholder { color: var(--ink-4); }
+.ltable tr.meta-notes-row > td { vertical-align: top; }
+
 /* Entry rows */
 .entry-row {
   display: grid; grid-template-columns: 1fr auto 160px;

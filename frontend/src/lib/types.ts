@@ -22,6 +22,14 @@ export interface BeautyEmployeeMonthly {
   health_insurance: string; personal_sales: string; notes: string | null
 }
 
+export interface BeautyMonthlyMeta {
+  id: number; store_id: number; fiscal_year: number; month: number
+  data_type: DataType
+  notes: string | null
+  fulltime_count: number | null
+  parttime_count: number | null
+}
+
 export const EXPENSE_CATEGORIES: ItemCategory[] = ['仕入', '人件費', '法定福利', '固定費', '税金', 'その他']
 export const MGMT_FEE_CODE = 'twinkle_fee'
 

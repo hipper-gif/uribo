@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiGet } from './api'
-import type { BeautyStore, BeautyItemMaster, BeautyMonthlyData, DataType } from './types'
+import type { BeautyStore, BeautyItemMaster, BeautyMonthlyData, BeautyMonthlyMeta, DataType } from './types'
 
 export function useStores() {
   const [stores, setStores] = useState<BeautyStore[]>([])
@@ -36,6 +36,29 @@ export function useMonthlyData(storeId: number, fiscalYear: number, dataType?: D
     if (storeId > 0) params.store_id = `eq.${storeId}`
     if (dataType) params.data_type = `eq.${dataType}`
     const r = await apiGet<BeautyMonthlyData[]>('beauty_monthly_data', params)
+    if (r.data) setData(r.data)
+    setLoading(false)
+  }, [storeId, fiscalYear, dataType])
+
+  useEffect(() => { reload() }, [reload])
+
+  return { data, loading, reload }
+}
+
+export function useMonthlyMeta(storeId: number, fiscalYear: number, dataType?: DataType) {
+  const [data, setData] = useState<BeautyMonthlyMeta[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const reload = useCallback(async () => {
+    if (!fiscalYear) return
+    setLoading(true)
+    const params: Record<string, string> = {
+      select: '*',
+      fiscal_year: `eq.${fiscalYear}`,
+    }
+    if (storeId > 0) params.store_id = `eq.${storeId}`
+    if (dataType) params.data_type = `eq.${dataType}`
+    const r = await apiGet<BeautyMonthlyMeta[]>('beauty_monthly_meta', params)
     if (r.data) setData(r.data)
     setLoading(false)
   }, [storeId, fiscalYear, dataType])

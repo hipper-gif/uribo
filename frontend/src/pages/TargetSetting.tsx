@@ -1,11 +1,13 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
+import { useStores, useItemMaster, useMonthlyData, useMonthlyMeta } from '../lib/useBeautyData'
 import { apiGet, apiPost, apiPatch } from '../lib/api'
 import { FISCAL_MONTHS, MONTH_LABELS, currentFiscalYear, formatPercent, formatMan } from '../lib/types'
-import type { BeautyMonthlyData, DataType } from '../lib/types'
+import type { BeautyMonthlyData, BeautyMonthlyMeta, DataType } from '../lib/types'
 
 type CellKey = string
 function cellKey(itemId: number, month: number): CellKey { return `${itemId}-${month}` }
+type MetaField = 'fulltime' | 'parttime' | 'notes'
+function metaKey(field: MetaField, month: number): string { return `meta-${field}-${month}` }
 type HelperId = 'sales' | 'labor' | 'fixed' | 'variable'
 
 export function TargetSetting() {
@@ -16,9 +18,12 @@ export function TargetSetting() {
   const [dataType, setDataType] = useState<'目標' | '見通し'>('目標')
 
   const { data, loading, reload } = useMonthlyData(storeId, fiscalYear, dataType as DataType)
+  const { data: metaData, reload: reloadMeta } = useMonthlyMeta(storeId, fiscalYear, dataType as DataType)
 
   const [editValues, setEditValues] = useState<Record<CellKey, string>>({})
   const [changedCells, setChangedCells] = useState<Set<CellKey>>(new Set())
+  const [metaValues, setMetaValues] = useState<Record<string, string>>({})
+  const [changedMeta, setChangedMeta] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
@@ -38,6 +43,12 @@ export function TargetSetting() {
     return map
   }, [data])
 
+  const metaLookup = useMemo(() => {
+    const map: Record<number, BeautyMonthlyMeta> = {}
+    for (const m of metaData) map[m.month] = m
+    return map
+  }, [metaData])
+
   const initializeFromData = useCallback((records: BeautyMonthlyData[]) => {
     const vals: Record<CellKey, string> = {}
     for (const d of records) {
@@ -49,10 +60,25 @@ export function TargetSetting() {
     setSaveMessage(null)
   }, [])
 
+  const initializeFromMeta = useCallback((records: BeautyMonthlyMeta[]) => {
+    const vals: Record<string, string> = {}
+    for (const m of records) {
+      if (m.fulltime_count != null) vals[metaKey('fulltime', m.month)] = String(m.fulltime_count)
+      if (m.parttime_count != null) vals[metaKey('parttime', m.month)] = String(m.parttime_count)
+      if (m.notes) vals[metaKey('notes', m.month)] = m.notes
+    }
+    setMetaValues(vals)
+    setChangedMeta(new Set())
+  }, [])
+
   useEffect(() => {
     if (data.length > 0) initializeFromData(data)
     else if (!loading) { setEditValues({}); setChangedCells(new Set()) }
   }, [data, loading, initializeFromData])
+
+  useEffect(() => {
+    initializeFromMeta(metaData)
+  }, [metaData, initializeFromMeta])
 
   const displayItems = useMemo(() =>
     items.filter(i => !i.is_calculated).sort((a, b) => a.sort_order - b.sort_order), [items])
@@ -89,8 +115,39 @@ export function TargetSetting() {
     setSaveMessage(null)
   }
 
+  function handleMetaChange(field: MetaField, month: number, value: string) {
+    if ((field === 'fulltime' || field === 'parttime') && value !== '' && !/^\d*$/.test(value)) return
+    const key = metaKey(field, month)
+    setMetaValues(prev => ({ ...prev, [key]: value }))
+    const original = metaLookup[month]
+    let originalVal = ''
+    if (original) {
+      if (field === 'fulltime') originalVal = original.fulltime_count != null ? String(original.fulltime_count) : ''
+      else if (field === 'parttime') originalVal = original.parttime_count != null ? String(original.parttime_count) : ''
+      else originalVal = original.notes ?? ''
+    }
+    const isChanged = value !== originalVal
+    setChangedMeta(prev => {
+      const next = new Set(prev)
+      isChanged ? next.add(key) : next.delete(key)
+      return next
+    })
+    setSaveMessage(null)
+  }
+
+  const totalChanges = changedCells.size + changedMeta.size
+
+  function changedMetaMonths(): number[] {
+    const months = new Set<number>()
+    for (const k of changedMeta) {
+      const parts = k.split('-')
+      months.add(Number(parts[2]))
+    }
+    return Array.from(months)
+  }
+
   async function handleSave() {
-    if (changedCells.size === 0) return
+    if (totalChanges === 0) return
     setSaving(true); setSaveMessage(null)
     let saved = 0, errors = 0
     for (const key of changedCells) {
@@ -102,9 +159,26 @@ export function TargetSetting() {
         : await apiPost('beauty_monthly_data', { store_id: storeId, fiscal_year: fiscalYear, month: mm, data_type: dataType, item_id: iid, amount })
       res.error ? errors++ : saved++
     }
+
+    for (const mm of changedMetaMonths()) {
+      const ft = metaValues[metaKey('fulltime', mm)]
+      const pt = metaValues[metaKey('parttime', mm)]
+      const nt = metaValues[metaKey('notes', mm)]
+      const body: Record<string, unknown> = {
+        fulltime_count: ft === '' || ft === undefined ? null : parseInt(ft, 10),
+        parttime_count: pt === '' || pt === undefined ? null : parseInt(pt, 10),
+        notes: nt === '' || nt === undefined ? null : nt,
+      }
+      const existing = metaLookup[mm]
+      const res = existing
+        ? await apiPatch('beauty_monthly_meta', { id: `eq.${existing.id}` }, body)
+        : await apiPost('beauty_monthly_meta', { store_id: storeId, fiscal_year: fiscalYear, month: mm, data_type: dataType, ...body })
+      res.error ? errors++ : saved++
+    }
+
     setSaving(false)
     setSaveMessage(errors > 0 ? `${saved}件保存、${errors}件エラー` : `${saved}件の${dataType}を保存しました`)
-    await reload()
+    await Promise.all([reload(), reloadMeta()])
   }
 
   async function fetchPrevActuals(): Promise<BeautyMonthlyData[]> {
@@ -221,23 +295,23 @@ export function TargetSetting() {
           <div className="page-subtitle">{fiscalYear}年度 · {dataType}値を編集</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving || changedCells.size === 0}>
-            {saving ? '保存中...' : `保存${changedCells.size > 0 ? ` (${changedCells.size})` : ''}`}
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving || totalChanges === 0}>
+            {saving ? '保存中...' : `保存${totalChanges > 0 ? ` (${totalChanges})` : ''}`}
           </button>
         </div>
       </div>
 
       <div className="filter-bar">
-        <select className="select" value={storeId} onChange={e => { setStoreId(Number(e.target.value)); setChangedCells(new Set()); setSaveMessage(null); setPrevActuals([]) }}>
+        <select className="select" value={storeId} onChange={e => { setStoreId(Number(e.target.value)); setChangedCells(new Set()); setChangedMeta(new Set()); setSaveMessage(null); setPrevActuals([]) }}>
           {stores.map(s => <option key={s.id} value={s.id}>{s.name}{!s.is_active ? ' （閉店）' : ''}</option>)}
         </select>
-        <select className="select" value={fiscalYear} onChange={e => { setFiscalYear(Number(e.target.value)); setChangedCells(new Set()); setSaveMessage(null); setPrevActuals([]) }}>
+        <select className="select" value={fiscalYear} onChange={e => { setFiscalYear(Number(e.target.value)); setChangedCells(new Set()); setChangedMeta(new Set()); setSaveMessage(null); setPrevActuals([]) }}>
           {years.map(y => <option key={y} value={y}>{y}年度</option>)}
         </select>
         <div className="seg" role="tablist">
           {(['目標', '見通し'] as const).map(dt => (
             <button key={dt} className="seg-btn" aria-pressed={dataType === dt}
-              onClick={() => { setDataType(dt); setChangedCells(new Set()); setSaveMessage(null) }}>
+              onClick={() => { setDataType(dt); setChangedCells(new Set()); setChangedMeta(new Set()); setSaveMessage(null) }}>
               <span>{dt}</span>
               <span className="sub">{dt === '目標' ? 'TARGET' : 'FORECAST'}</span>
             </button>
@@ -270,11 +344,79 @@ export function TargetSetting() {
             </div>
             <div className="kpi">
               <div className="kpi-label">編集中</div>
-              <div className="kpi-value">{changedCells.size}<span className="unit">件</span></div>
+              <div className="kpi-value">{totalChanges}<span className="unit">件</span></div>
               <div className="kpi-meta">
-                {changedCells.size > 0 && <span className="chip accent">UNSAVED</span>}
-                <span>{changedCells.size ? '未保存の変更' : '変更なし'}</span>
+                {totalChanges > 0 && <span className="chip accent">UNSAVED</span>}
+                <span>{totalChanges ? '未保存の変更' : '変更なし'}</span>
               </div>
+            </div>
+          </div>
+
+          {/* STAFF & NOTES — 月別 想定人員と備考（売上目標を設計するベース） */}
+          <div className="card" style={{ padding: 0, marginBottom: 12 }}>
+            <div className="card-head">
+              <div className="card-title"><span className="index">STAFF</span>月別 想定人員 / 備考</div>
+              <span className="smallcaps">{dataType} · 正社員/パート人数と予測根拠</span>
+            </div>
+            <div className="table-scroll">
+              <table className="ltable">
+                <thead>
+                  <tr>
+                    <th className="col-label">項目</th>
+                    {FISCAL_MONTHS.map(m => <th key={m}>{MONTH_LABELS[m]}</th>)}
+                    <th className="tot-col">合計</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="col-label">正社員</td>
+                    {FISCAL_MONTHS.map(m => {
+                      const k = metaKey('fulltime', m)
+                      const isChanged = changedMeta.has(k)
+                      return (
+                        <td key={m} className={`num ${isChanged ? 'cell-changed' : ''}`} style={{ padding: 0 }}>
+                          <input className="cell-input meta-num-input" value={metaValues[k] ?? ''}
+                            onChange={e => handleMetaChange('fulltime', m, e.target.value)} placeholder="—" />
+                        </td>
+                      )
+                    })}
+                    <td className="num tot-col">
+                      {FISCAL_MONTHS.reduce((s, m) => s + (parseInt(metaValues[metaKey('fulltime', m)] || '0', 10) || 0), 0) || '—'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="col-label">パート</td>
+                    {FISCAL_MONTHS.map(m => {
+                      const k = metaKey('parttime', m)
+                      const isChanged = changedMeta.has(k)
+                      return (
+                        <td key={m} className={`num ${isChanged ? 'cell-changed' : ''}`} style={{ padding: 0 }}>
+                          <input className="cell-input meta-num-input" value={metaValues[k] ?? ''}
+                            onChange={e => handleMetaChange('parttime', m, e.target.value)} placeholder="—" />
+                        </td>
+                      )
+                    })}
+                    <td className="num tot-col">
+                      {FISCAL_MONTHS.reduce((s, m) => s + (parseInt(metaValues[metaKey('parttime', m)] || '0', 10) || 0), 0) || '—'}
+                    </td>
+                  </tr>
+                  <tr className="meta-notes-row">
+                    <td className="col-label">備考</td>
+                    {FISCAL_MONTHS.map(m => {
+                      const k = metaKey('notes', m)
+                      const isChanged = changedMeta.has(k)
+                      return (
+                        <td key={m} className={isChanged ? 'cell-changed' : ''} style={{ padding: 0, verticalAlign: 'top' }}>
+                          <textarea className="meta-textarea" value={metaValues[k] ?? ''}
+                            onChange={e => handleMetaChange('notes', m, e.target.value)}
+                            placeholder="予測根拠…" rows={2} />
+                        </td>
+                      )
+                    })}
+                    <td className="tot-col" />
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
