@@ -420,10 +420,14 @@ export function TargetSetting() {
             </div>
           </div>
 
-          {/* Helper panel */}
-          <div className="card" style={{ marginBottom: 12 }}>
-            <div className="helper-bar">
-              <span className="smallcaps" style={{ color: 'var(--ink-4)', paddingRight: 8 }}>HELPERS</span>
+          {/* Helper panel — collapsed by default */}
+          <details className="card helper-details" style={{ marginBottom: 12 }}>
+            <summary className="helper-bar" style={{ cursor: 'pointer', listStyle: 'none' }}>
+              <span className="caret" style={{ fontSize: 10, marginRight: 6, display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
+              <span className="smallcaps" style={{ color: 'var(--ink-4)', paddingRight: 8 }}>一括入力ヘルパー</span>
+              <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>売上配分・人件費計算・固定費コピー・変動費比率</span>
+            </summary>
+            <div className="helper-bar" style={{ borderTop: '1px solid var(--rule)', paddingTop: 10 }}>
               {HELPERS.map(h => (
                 <button key={h.id} className={`helper-btn${helperOpen === h.id ? ' active' : ''}`}
                   onClick={() => setHelperOpen(ho => ho === h.id ? null : h.id)}>
@@ -518,7 +522,7 @@ export function TargetSetting() {
                 </button>
               </div>
             )}
-          </div>
+          </details>
 
           {/* Table */}
           <div className="card" style={{ padding: 0 }}>
@@ -581,6 +585,36 @@ export function TargetSetting() {
               </table>
             </div>
           </div>
+
+          {/* Save bar — always visible at bottom */}
+          {(totalChanges > 0 || totalSales > 0) && (
+            <div className="savebar">
+              <div className="summary">
+                <div className="item">
+                  <span className="k">売上</span>
+                  <span className="v">{formatMan(totalSales)}</span>
+                </div>
+                <div className="item">
+                  <span className="k">支出</span>
+                  <span className="v">{formatMan(totalExp)}</span>
+                </div>
+                <div className="item">
+                  <span className="k">利益</span>
+                  <span className="v" style={{ color: totalProfit >= 0 ? 'var(--positive)' : 'var(--negative)' }}>{formatMan(totalProfit)}</span>
+                </div>
+                <div className="item">
+                  <span className="k">利益率</span>
+                  <span className="v" style={{ color: totalProfit >= 0 ? 'var(--positive)' : 'var(--negative)' }}>{totalSales ? formatPercent(totalProfit / totalSales) : '—'}</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {totalChanges > 0 && <span className="chip accent">{totalChanges}件未保存</span>}
+                <button className="btn btn-primary" onClick={handleSave} disabled={saving || totalChanges === 0}>
+                  {saving ? '保存中...' : '保存'}
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
