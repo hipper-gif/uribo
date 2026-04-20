@@ -1,8 +1,11 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useStores, useItemMaster, useMonthlyData, useMonthlyMeta } from '../lib/useBeautyData'
 import { apiGet, apiPost, apiPatch } from '../lib/api'
-import { FISCAL_MONTHS, MONTH_LABELS, currentFiscalYear, formatPercent, formatMan } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, currentFiscalYear, formatPercent, formatMan, formatAmount } from '../lib/types'
 import type { BeautyMonthlyData, BeautyMonthlyMeta, DataType } from '../lib/types'
+import { fetchBeautyStaff, type MnemeEmployee } from '../lib/mnemeApi'
+
+interface StoreMapEntry { id: number; mneme_employee_id: number; store_id: number }
 
 type CellKey = string
 function cellKey(itemId: number, month: number): CellKey { return `${itemId}-${month}` }
@@ -31,11 +34,24 @@ export function TargetSetting() {
   const [helperOpen, setHelperOpen] = useState<HelperId | null>(null)
   const [salesAnnual, setSalesAnnual] = useState('')
   const [salesDist, setSalesDist] = useState<'equal' | 'lastyear'>('equal')
-  const [laborMonthly, setLaborMonthly] = useState('')
   const [transportMonthly, setTransportMonthly] = useState('')
   const [welfareRate, setWelfareRate] = useState('14.5')
   const [prevActuals, setPrevActuals] = useState<BeautyMonthlyData[]>([])
   const [loadingPrev, setLoadingPrev] = useState(false)
+
+  // Labor helper — Mneme staff
+  const [mnemeStaff, setMnemeStaff] = useState<MnemeEmployee[]>([])
+  const [storeMap, setStoreMap] = useState<StoreMapEntry[]>([])
+  const [staffChecked, setStaffChecked] = useState<Set<number>>(new Set())
+  const [staffSalary, setStaffSalary] = useState<Record<number, string>>({})
+  const [staffHours, setStaffHours] = useState<Record<number, string>>({})
+  const [incentiveRate, setIncentiveRate] = useState('4')
+  const [loadingStaff, setLoadingStaff] = useState(false)
+  const [staffLoaded, setStaffLoaded] = useState(false)
+
+  // Variable ratio helper — per-item ratio overrides
+  const [variableRatios, setVariableRatios] = useState<Record<number, string>>({})
+  const [ratiosLoaded, setRatiosLoaded] = useState(false)
 
   const dataLookup = useMemo(() => {
     const map: Record<CellKey, BeautyMonthlyData> = {}
@@ -193,6 +209,86 @@ export function TargetSetting() {
     return d
   }
 
+  // Fetch Mneme staff + store map when labor helper opens
+  useEffect(() => {
+    if (helperOpen !== 'labor' || staffLoaded) return
+    let cancelled = false
+    async function load() {
+      setLoadingStaff(true)
+      const [staff, mapRes] = await Promise.all([
+        fetchBeautyStaff(),
+        apiGet<StoreMapEntry[]>('beauty_staff_store_map'),
+      ])
+      if (cancelled) return
+      setMnemeStaff(staff)
+      const map = mapRes.data ?? []
+      setStoreMap(map)
+      // Auto-check staff assigned to current store
+      const checked = new Set<number>()
+      const salaries: Record<number, string> = {}
+      for (const s of staff) {
+        const mapping = map.find(m => m.mneme_employee_id === s.id)
+        if (mapping && mapping.store_id === storeId) checked.add(s.id)
+        if (s.base_salary != null) salaries[s.id] = String(s.base_salary)
+      }
+      setStaffChecked(checked)
+      setStaffSalary(prev => ({ ...salaries, ...prev }))
+      setLoadingStaff(false)
+      setStaffLoaded(true)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [helperOpen, staffLoaded, storeId])
+
+  // Reset staff loaded state when store changes
+  useEffect(() => { setStaffLoaded(false) }, [storeId])
+
+  const staffForCurrentStore = useMemo(() => {
+    // Show staff assigned to this store + unassigned staff
+    return mnemeStaff.filter(s => {
+      const mapping = storeMap.find(m => m.mneme_employee_id === s.id)
+      return !mapping || mapping.store_id === storeId
+    })
+  }, [mnemeStaff, storeMap, storeId])
+
+  function getStaffMonthlySalary(emp: MnemeEmployee): number {
+    const override = staffSalary[emp.id]
+    if (override !== undefined && override !== '') return parseFloat(override) || 0
+    return emp.base_salary ?? 0
+  }
+
+  function getStaffDisplaySalary(emp: MnemeEmployee): number {
+    const base = getStaffMonthlySalary(emp)
+    if (emp.salary_type === '時給') {
+      const hours = parseFloat(staffHours[emp.id] || '0') || 0
+      return base * hours
+    }
+    return base
+  }
+
+  const checkedStaffBaseSalaryTotal = useMemo(() => {
+    return staffForCurrentStore
+      .filter(s => staffChecked.has(s.id))
+      .reduce((sum, s) => sum + getStaffDisplaySalary(s), 0)
+  }, [staffForCurrentStore, staffChecked, staffSalary, staffHours])
+
+  async function saveStoreMap() {
+    // Save checked staff → current store, remove unchecked
+    for (const s of staffForCurrentStore) {
+      const existing = storeMap.find(m => m.mneme_employee_id === s.id)
+      if (staffChecked.has(s.id)) {
+        if (!existing) {
+          await apiPost('beauty_staff_store_map', { mneme_employee_id: s.id, store_id: storeId })
+        } else if (existing.store_id !== storeId) {
+          await apiPatch('beauty_staff_store_map', { id: `eq.${existing.id}` }, { store_id: storeId })
+        }
+      }
+    }
+    // Reload map
+    const mapRes = await apiGet<StoreMapEntry[]>('beauty_staff_store_map')
+    if (mapRes.data) setStoreMap(mapRes.data)
+  }
+
   function applyToState(patches: Record<CellKey, string>) {
     setEditValues(prev => ({ ...prev, ...patches }))
     setChangedCells(prev => { const n = new Set(prev); Object.keys(patches).forEach(k => n.add(k)); return n })
@@ -221,20 +317,26 @@ export function TargetSetting() {
     applyToState(patches)
   }
 
-  function applyLaborCosts() {
-    const salaryVal = parseFloat(laborMonthly) || 0
+  async function applyLaborCosts() {
+    const baseSalary = checkedStaffBaseSalaryTotal
     const transportVal = parseFloat(transportMonthly) || 0
-    const rateVal = parseFloat(welfareRate) / 100
+    const incRate = (parseFloat(incentiveRate) || 0) / 100
+    const welRate = (parseFloat(welfareRate) || 0) / 100
     const salaryItem = items.find(i => i.item_code === 'salary_total')
     const transportItem = items.find(i => i.item_code === 'transport_total')
     const welfareItem = items.find(i => i.item_code === 'legal_welfare')
     const patches: Record<CellKey, string> = {}
     FISCAL_MONTHS.forEach(m => {
-      if (salaryItem && salaryVal > 0) patches[cellKey(salaryItem.id, m)] = String(salaryVal)
-      if (transportItem && transportVal > 0) patches[cellKey(transportItem.id, m)] = String(transportVal)
-      if (welfareItem && salaryVal > 0 && !isNaN(rateVal)) patches[cellKey(welfareItem.id, m)] = String(Math.round(salaryVal * rateVal))
+      const sales = getSalesAmount(m)
+      const incentive = Math.round(sales * incRate)
+      const salaryTotal = baseSalary + incentive
+      if (salaryItem) patches[cellKey(salaryItem.id, m)] = String(salaryTotal)
+      if (transportItem) patches[cellKey(transportItem.id, m)] = String(transportVal)
+      if (welfareItem) patches[cellKey(welfareItem.id, m)] = String(Math.round(salaryTotal * welRate))
     })
     applyToState(patches)
+    // Save store mapping
+    await saveStoreMap()
   }
 
   async function applyFixedCosts() {
@@ -250,23 +352,55 @@ export function TargetSetting() {
     applyToState(patches)
   }
 
-  async function applyVariableRatios() {
-    if (!salesItem) return
+  const variableItems = useMemo(() =>
+    items.filter(i => ['仕入', 'その他'].includes(i.item_category) && !i.is_calculated && i.item_code !== 'twinkle_fee'),
+    [items])
+
+  async function loadVariableRatios() {
+    if (ratiosLoaded) return
     const prev = await fetchPrevActuals()
-    const variableItems = items.filter(i => ['仕入', 'その他'].includes(i.item_category) && !i.is_calculated && i.item_code !== 'twinkle_fee')
-    const patches: Record<CellKey, string> = {}
+    if (!salesItem) return
+    const ratios: Record<number, string> = {}
     for (const item of variableItems) {
+      let totalExp = 0, totalSalesAmt = 0
       for (const m of FISCAL_MONTHS) {
         const prevExp = prev.find(d => d.item_id === item.id && d.month === m)
         const prevSales = prev.find(d => d.item_id === salesItem.id && d.month === m)
-        if (!prevExp || !prevSales) continue
-        const prevSalesAmt = parseFloat(prevSales.amount)
-        if (prevSalesAmt === 0) continue
-        const ratio = parseFloat(prevExp.amount) / prevSalesAmt
-        if (!isNaN(ratio) && isFinite(ratio)) {
-          const currSales = getCellValue(salesItem.id, m)
-          if (currSales > 0) patches[cellKey(item.id, m)] = String(Math.round(currSales * ratio))
+        if (prevExp && prevSales) {
+          totalExp += parseFloat(prevExp.amount) || 0
+          totalSalesAmt += parseFloat(prevSales.amount) || 0
         }
+      }
+      if (totalSalesAmt > 0) {
+        const r = (totalExp / totalSalesAmt) * 100
+        ratios[item.id] = r.toFixed(1)
+      }
+    }
+    setVariableRatios(prev => {
+      // Only fill in items that don't already have overrides
+      const merged = { ...ratios }
+      for (const [k, v] of Object.entries(prev)) { if (v !== '') merged[Number(k)] = v }
+      return merged
+    })
+    setRatiosLoaded(true)
+  }
+
+  // Load ratios when variable helper opens
+  useEffect(() => {
+    if (helperOpen === 'variable' && !ratiosLoaded) { loadVariableRatios() }
+  }, [helperOpen, ratiosLoaded])
+
+  function applyVariableRatios() {
+    if (!salesItem) return
+    const patches: Record<CellKey, string> = {}
+    for (const item of variableItems) {
+      const rateStr = variableRatios[item.id]
+      if (rateStr === undefined || rateStr === '') continue
+      const rate = parseFloat(rateStr) / 100
+      if (isNaN(rate)) continue
+      for (const m of FISCAL_MONTHS) {
+        const currSales = getCellValue(salesItem.id, m)
+        if (currSales > 0) patches[cellKey(item.id, m)] = String(Math.round(currSales * rate))
       }
     }
     applyToState(patches)
@@ -279,9 +413,9 @@ export function TargetSetting() {
 
   const HELPERS: { id: HelperId; label: string; sub: string }[] = [
     { id: 'sales', label: '① 売上配分', sub: '年額→月次展開' },
-    { id: 'labor', label: '② 人件費', sub: '月額×法定福利' },
+    { id: 'labor', label: '② 人件費', sub: 'Mneme連携' },
     { id: 'fixed', label: '③ 固定費', sub: '前年実績コピー' },
-    { id: 'variable', label: '④ 変動費', sub: '前年比率適用' },
+    { id: 'variable', label: '④ 変動費', sub: '比率調整' },
   ]
 
   return (
@@ -465,37 +599,146 @@ export function TargetSetting() {
             )}
 
             {helperOpen === 'labor' && (
-              <div className="helper-body">
-                <div className="helper-field">
-                  <label className="helper-label">月額人件費合計</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input type="number" className="helper-input" value={laborMonthly}
-                      onChange={e => setLaborMonthly(e.target.value)} placeholder="例: 800000" />
-                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>円</span>
-                  </div>
-                </div>
-                <div className="helper-field">
-                  <label className="helper-label">月額交通費合計</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input type="number" className="helper-input" value={transportMonthly}
-                      onChange={e => setTransportMonthly(e.target.value)} placeholder="例: 30000" />
-                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>円</span>
-                  </div>
-                </div>
-                <div className="helper-field">
-                  <label className="helper-label">法定福利率（法定福利費に適用）</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input type="number" className="helper-input" style={{ width: 80 }} value={welfareRate}
-                      onChange={e => setWelfareRate(e.target.value)} step="0.1" />
-                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>%</span>
-                  </div>
-                </div>
-                <div className="helper-field" style={{ justifyContent: 'flex-end' }}>
-                  <label className="helper-label">&nbsp;</label>
-                  <button className="btn btn-primary" onClick={applyLaborCosts} disabled={!laborMonthly}>
-                    人件費・法定福利に適用
-                  </button>
-                </div>
+              <div className="helper-body" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                {loadingStaff ? (
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '8px 0' }}>Mnemeからスタッフ読込中…</div>
+                ) : (
+                  <>
+                    {/* Staff list */}
+                    <div>
+                      <div className="helper-label" style={{ marginBottom: 8 }}>スタッフ一覧（Mnemeから取得）</div>
+                      {staffForCurrentStore.length === 0 ? (
+                        <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '8px 0' }}>
+                          美容部門のスタッフがMnemeに未登録です。先にMnemeにスタッフを追加してください。
+                        </div>
+                      ) : (
+                        <table className="staff-table">
+                          <thead>
+                            <tr>
+                              <th style={{ width: 32 }}></th>
+                              <th style={{ textAlign: 'left' }}>名前</th>
+                              <th style={{ textAlign: 'left' }}>雇用形態</th>
+                              <th style={{ textAlign: 'left' }}>給与種別</th>
+                              <th style={{ textAlign: 'right' }}>基本給</th>
+                              <th style={{ textAlign: 'right' }}>月額</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {staffForCurrentStore.map(emp => {
+                              const checked = staffChecked.has(emp.id)
+                              const isHourly = emp.salary_type === '時給'
+                              const monthlySalary = getStaffDisplaySalary(emp)
+                              return (
+                                <tr key={emp.id} style={{ opacity: checked ? 1 : 0.5 }}>
+                                  <td style={{ textAlign: 'center' }}>
+                                    <input type="checkbox" checked={checked}
+                                      onChange={() => setStaffChecked(prev => {
+                                        const next = new Set(prev)
+                                        checked ? next.delete(emp.id) : next.add(emp.id)
+                                        return next
+                                      })} />
+                                  </td>
+                                  <td>{emp.name}</td>
+                                  <td>{emp.employment_type ?? '—'}</td>
+                                  <td>{emp.salary_type ?? '月給'}</td>
+                                  <td style={{ textAlign: 'right', padding: 0 }}>
+                                    <input type="number" className="helper-input staff-salary-input"
+                                      value={staffSalary[emp.id] ?? ''}
+                                      onChange={e => setStaffSalary(prev => ({ ...prev, [emp.id]: e.target.value }))}
+                                      placeholder={emp.base_salary != null ? String(emp.base_salary) : '未設定'} />
+                                  </td>
+                                  <td style={{ textAlign: 'right' }}>
+                                    {isHourly ? (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                                        <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>×</span>
+                                        <input type="number" className="helper-input staff-hours-input"
+                                          value={staffHours[emp.id] ?? ''}
+                                          onChange={e => setStaffHours(prev => ({ ...prev, [emp.id]: e.target.value }))}
+                                          placeholder="h/月" />
+                                        <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>=</span>
+                                        <span className="tnum">{formatAmount(monthlySalary)}</span>
+                                      </div>
+                                    ) : (
+                                      <span className="tnum">{monthlySalary > 0 ? formatAmount(monthlySalary) : '—'}</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr>
+                              <td colSpan={5} style={{ textAlign: 'right', fontWeight: 600, fontSize: 12 }}>基本給合計</td>
+                              <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                                <span className="tnum">{formatAmount(checkedStaffBaseSalaryTotal)}</span>
+                                <span style={{ fontSize: 11, color: 'var(--ink-3)', marginLeft: 4 }}>円</span>
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      )}
+                    </div>
+
+                    {/* Parameters */}
+                    <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 12 }}>
+                      <div className="helper-field">
+                        <label className="helper-label">交通費合計（月額）</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input type="number" className="helper-input" value={transportMonthly}
+                            onChange={e => setTransportMonthly(e.target.value)} placeholder="例: 30000" />
+                          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>円</span>
+                        </div>
+                      </div>
+                      <div className="helper-field">
+                        <label className="helper-label">インセンティブ率（売上×率）</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input type="number" className="helper-input" style={{ width: 80 }} value={incentiveRate}
+                            onChange={e => setIncentiveRate(e.target.value)} step="0.5" />
+                          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>%</span>
+                        </div>
+                      </div>
+                      <div className="helper-field">
+                        <label className="helper-label">法定福利率</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input type="number" className="helper-input" style={{ width: 80 }} value={welfareRate}
+                            onChange={e => setWelfareRate(e.target.value)} step="0.1" />
+                          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>%</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Monthly estimate summary */}
+                    {checkedStaffBaseSalaryTotal > 0 && (
+                      <div className="labor-summary">
+                        <div className="helper-label" style={{ marginBottom: 6 }}>月額概算</div>
+                        <div className="labor-summary-row">
+                          <span>基本給</span>
+                          <span className="tnum">{formatAmount(checkedStaffBaseSalaryTotal)}円</span>
+                        </div>
+                        <div className="labor-summary-row">
+                          <span>インセンティブ</span>
+                          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>売上×{incentiveRate}%（売上目標により変動）</span>
+                        </div>
+                        <div className="labor-summary-row">
+                          <span>交通費</span>
+                          <span className="tnum">{formatAmount(parseFloat(transportMonthly) || 0)}円</span>
+                        </div>
+                        <div className="labor-summary-row">
+                          <span>法定福利</span>
+                          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>(基本給+インセンティブ)×{welfareRate}%</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Apply button */}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                      <button className="btn btn-primary" onClick={applyLaborCosts}
+                        disabled={checkedStaffBaseSalaryTotal === 0 && !(parseFloat(transportMonthly) > 0)}>
+                        人件費に適用
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -512,14 +755,58 @@ export function TargetSetting() {
             )}
 
             {helperOpen === 'variable' && (
-              <div className="helper-body">
+              <div className="helper-body" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
                 <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.6 }}>
-                  {fiscalYear - 1}年度の「費用 ÷ 売上」比率 × 今年の目標売上で各月の変動費を自動計算します。<br />
-                  <span style={{ color: 'var(--ink-4)', fontSize: 11.5 }}>対象: 仕入・その他 ／ ①売上配分を先に適用してから実行してください</span>
+                  各項目の対売上比率(%)を設定し、売上目標に掛けて変動費を計算します。<br />
+                  <span style={{ color: 'var(--ink-4)', fontSize: 11.5 }}>初期値は{fiscalYear - 1}年度実績から算出 ／ ①売上配分を先に適用してから実行してください</span>
                 </div>
-                <button className="btn btn-primary" onClick={applyVariableRatios} disabled={loadingPrev || totalSales === 0}>
-                  {loadingPrev ? '読込中...' : '前年比率を適用'}
-                </button>
+                {loadingPrev ? (
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '8px 0' }}>前年データ読込中…</div>
+                ) : (
+                  <>
+                    <table className="staff-table" style={{ marginTop: 8 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left' }}>科目</th>
+                          <th style={{ textAlign: 'left' }}>カテゴリ</th>
+                          <th style={{ textAlign: 'right', width: 100 }}>対売上比率</th>
+                          <th style={{ textAlign: 'right' }}>月平均概算</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {variableItems.map(item => {
+                          const rate = variableRatios[item.id] ?? ''
+                          const avgSales = totalSales / 12
+                          const estimated = rate !== '' ? Math.round(avgSales * (parseFloat(rate) || 0) / 100) : 0
+                          return (
+                            <tr key={item.id}>
+                              <td>{item.item_name}</td>
+                              <td style={{ color: 'var(--ink-3)', fontSize: 11.5 }}>{item.item_category}</td>
+                              <td style={{ padding: 0, textAlign: 'right' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, padding: '0 8px' }}>
+                                  <input type="number" className="helper-input" style={{ width: 72, textAlign: 'right', padding: '3px 6px', fontSize: 12 }}
+                                    value={rate} onChange={e => setVariableRatios(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                    placeholder="—" step="0.1" />
+                                  <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>%</span>
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                <span className="tnum" style={{ color: estimated > 0 ? 'var(--ink)' : 'var(--ink-4)' }}>
+                                  {estimated > 0 ? formatAmount(estimated) : '—'}
+                                </span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                      <button className="btn btn-primary" onClick={applyVariableRatios} disabled={totalSales === 0}>
+                        変動費に適用
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </details>
