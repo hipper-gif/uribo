@@ -102,6 +102,7 @@ export function TargetSetting() {
   const salesItems = useMemo(() => displayItems.filter(i => i.item_category === '売上'), [displayItems])
   const expenseItems = useMemo(() => displayItems.filter(i => i.item_category !== '売上'), [displayItems])
   const salesItem = useMemo(() => items.find(i => i.item_code === 'sales'), [items])
+  const unitPriceItem = useMemo(() => items.find(i => i.item_code === 'unit_price'), [items])
 
   function getCellValue(itemId: number, month: number): number {
     const v = editValues[cellKey(itemId, month)]
@@ -115,6 +116,14 @@ export function TargetSetting() {
   }
   function getSalesAmount(month: number): number {
     return salesItem ? getCellValue(salesItem.id, month) : 0
+  }
+  function getUnitPrice(month: number): number {
+    return unitPriceItem ? getCellValue(unitPriceItem.id, month) : 0
+  }
+  function getCustomerCount(month: number): number {
+    const sales = getSalesAmount(month)
+    const price = getUnitPrice(month)
+    return price > 0 ? Math.round(sales / price) : 0
   }
 
   function handleCellChange(itemId: number, month: number, value: string) {
@@ -1056,11 +1065,43 @@ export function TargetSetting() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...salesItems, ...expenseItems].map(item => {
+                  {salesItems.map(item => {
                     const total = getRowTotal(item.id)
                     const isPrimary = item.item_code === 'sales'
                     return (
                       <tr key={item.id} className={isPrimary ? 'emphasis' : ''}>
+                        <td className="col-label">{item.item_name}</td>
+                        {FISCAL_MONTHS.map(m => {
+                          const key = cellKey(item.id, m)
+                          const isChanged = changedCells.has(key)
+                          return (
+                            <td key={m} className={`num ${isChanged ? 'cell-changed' : ''}`} style={{ padding: 0 }}>
+                              <input className="cell-input" value={editValues[key] ?? ''}
+                                data-item-id={item.id} data-month={m}
+                                onFocus={e => e.target.select()}
+                                onChange={e => handleCellChange(item.id, m, e.target.value)}
+                                placeholder="—" />
+                            </td>
+                          )
+                        })}
+                        <td className="num tot-col">{total ? formatMan(total) : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                  <tr style={{ background: 'var(--paper-2)' }}>
+                    <td className="col-label" style={{ color: 'var(--ink-3)' }}>客数（自動）</td>
+                    {FISCAL_MONTHS.map(m => {
+                      const count = getCustomerCount(m)
+                      return <td key={m} className="num" style={{ color: 'var(--ink-3)' }}>{count > 0 ? `${count}人` : '—'}</td>
+                    })}
+                    <td className="num tot-col" style={{ color: 'var(--ink-3)' }}>
+                      {FISCAL_MONTHS.reduce((s, m) => s + getCustomerCount(m), 0) || '—'}
+                    </td>
+                  </tr>
+                  {expenseItems.map(item => {
+                    const total = getRowTotal(item.id)
+                    return (
+                      <tr key={item.id}>
                         <td className="col-label">{item.item_name}</td>
                         {FISCAL_MONTHS.map(m => {
                           const key = cellKey(item.id, m)
