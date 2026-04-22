@@ -114,7 +114,7 @@ export function TargetSetting() {
     return FISCAL_MONTHS.reduce((s, m) => s + getCellValue(itemId, m), 0)
   }
   function getExpenseTotal(month: number): number {
-    return expenseItems.reduce((s, i) => s + getCellValue(i.id, month), 0) + getWithholdingTax(month)
+    return expenseItems.reduce((s, i) => s + getCellValue(i.id, month), 0) + getWithholdingTax(month) + monthlySocialInsurance
   }
   function getSalesAmount(month: number): number {
     return salesItem ? getCellValue(salesItem.id, month) : 0
@@ -282,9 +282,9 @@ export function TargetSetting() {
     return d
   }
 
-  // Fetch Mneme staff + store map when labor helper opens
+  // Fetch Mneme staff + store map on load (needed for social insurance calc)
   useEffect(() => {
-    if (helperOpen !== 'labor' || staffLoaded) return
+    if (staffLoaded) return
     let cancelled = false
     async function load() {
       setLoadingStaff(true)
@@ -311,7 +311,7 @@ export function TargetSetting() {
     }
     load()
     return () => { cancelled = true }
-  }, [helperOpen, staffLoaded, storeId])
+  }, [staffLoaded, storeId])
 
   // Reset staff loaded state when store changes
   useEffect(() => { setStaffLoaded(false) }, [storeId])
@@ -322,6 +322,16 @@ export function TargetSetting() {
       const mapping = storeMap.find(m => m.mneme_employee_id === s.id)
       return !mapping || mapping.store_id === storeId
     })
+  }, [mnemeStaff, storeMap, storeId])
+
+  // 当店舗割当スタッフの社保会社負担額（月額）
+  const monthlySocialInsurance = useMemo(() => {
+    return mnemeStaff
+      .filter(s => {
+        const mapping = storeMap.find(m => m.mneme_employee_id === s.id)
+        return mapping && mapping.store_id === storeId && s.health_insurance_enrolled
+      })
+      .reduce((sum, s) => sum + (s.health_insurance_premium ?? 0) + (s.care_insurance_premium ?? 0) + (s.pension_insurance_premium ?? 0), 0)
   }, [mnemeStaff, storeMap, storeId])
 
   function getStaffMonthlySalary(emp: MnemeEmployee): number {
@@ -1162,6 +1172,15 @@ export function TargetSetting() {
                       </tr>
                     )
                   })}
+                  <tr style={{ background: 'var(--paper-2)' }}>
+                    <td className="col-label" style={{ color: 'var(--ink-3)' }}>法定福利費（自動）</td>
+                    {FISCAL_MONTHS.map(m => (
+                      <td key={m} className="num" style={{ color: 'var(--ink-3)' }}>{monthlySocialInsurance > 0 ? formatMan(monthlySocialInsurance) : '—'}</td>
+                    ))}
+                    <td className="num tot-col" style={{ color: 'var(--ink-3)' }}>
+                      {monthlySocialInsurance > 0 ? formatMan(monthlySocialInsurance * 12) : '—'}
+                    </td>
+                  </tr>
                   <tr style={{ background: 'var(--paper-2)' }}>
                     <td className="col-label" style={{ color: 'var(--ink-3)' }}>預かり税（自動）</td>
                     {FISCAL_MONTHS.map(m => {
