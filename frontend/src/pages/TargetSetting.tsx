@@ -68,14 +68,24 @@ export function TargetSetting() {
 
   const initializeFromData = useCallback((records: BeautyMonthlyData[]) => {
     const vals: Record<CellKey, string> = {}
-    for (const d of records) {
-      const amount = parseFloat(d.amount)
-      if (amount !== 0) vals[cellKey(d.item_id, d.month)] = String(amount)
+    if (storeId === 0) {
+      // 全店舗合計: 同じ item_id+month を合算
+      const sums: Record<string, number> = {}
+      for (const d of records) {
+        const key = cellKey(d.item_id, d.month)
+        sums[key] = (sums[key] ?? 0) + (parseFloat(d.amount) || 0)
+      }
+      for (const [key, sum] of Object.entries(sums)) { if (sum !== 0) vals[key] = String(sum) }
+    } else {
+      for (const d of records) {
+        const amount = parseFloat(d.amount)
+        if (amount !== 0) vals[cellKey(d.item_id, d.month)] = String(amount)
+      }
     }
     setEditValues(vals)
     setChangedCells(new Set())
     setSaveMessage(null)
-  }, [])
+  }, [storeId])
 
   const initializeFromMeta = useCallback((records: BeautyMonthlyMeta[]) => {
     const vals: Record<string, string> = {}
@@ -105,6 +115,7 @@ export function TargetSetting() {
   const unitPriceItem = useMemo(() => items.find(i => i.item_code === 'unit_price'), [items])
   const discountItem = useMemo(() => items.find(i => i.item_code === 'discount'), [items])
   const cogsItem = useMemo(() => items.find(i => i.item_code === 'cogs'), [items])
+  const twinkleFeeItem = useMemo(() => items.find(i => i.item_code === 'twinkle_fee'), [items])
 
   function getCellValue(itemId: number, month: number): number {
     const v = editValues[cellKey(itemId, month)]
@@ -132,6 +143,9 @@ export function TargetSetting() {
   }
   function getCogsAmount(month: number): number {
     return cogsItem ? getCellValue(cogsItem.id, month) : 0
+  }
+  function getTwinkleFee(month: number): number {
+    return twinkleFeeItem ? getCellValue(twinkleFeeItem.id, month) : 0
   }
   function getWithholdingTax(month: number): number {
     const net = getSalesAmount(month) - getDiscountAmount(month) - getCogsAmount(month)
@@ -650,6 +664,7 @@ export function TargetSetting() {
 
       <div className="filter-bar">
         <select className="select" value={storeId} onChange={e => { setStoreId(Number(e.target.value)); setChangedCells(new Set()); setChangedMeta(new Set()); setSaveMessage(null); setPrevActuals([]) }}>
+          <option value={0}>全店舗</option>
           {stores.map(s => <option key={s.id} value={s.id}>{s.name}{!s.is_active ? ' （閉店）' : ''}</option>)}
         </select>
         <select className="select" value={fiscalYear} onChange={e => { setFiscalYear(Number(e.target.value)); setChangedCells(new Set()); setChangedMeta(new Set()); setSaveMessage(null); setPrevActuals([]) }}>
@@ -700,7 +715,7 @@ export function TargetSetting() {
           </div>
 
           {/* STAFF & NOTES — 月別 想定人員と備考（売上目標を設計するベース） */}
-          <div className="card" style={{ padding: 0, marginBottom: 12 }}>
+          {storeId !== 0 && <div className="card" style={{ padding: 0, marginBottom: 12 }}>
             <div className="card-head">
               <div className="card-title"><span className="index">STAFF</span>月別 想定人員 / 備考</div>
               <span className="smallcaps">{dataType} · 正社員/パート人数と予測根拠</span>
@@ -765,10 +780,10 @@ export function TargetSetting() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
 
           {/* Helper panel — collapsed by default */}
-          <details className="card helper-details" style={{ marginBottom: 12 }}>
+          {storeId !== 0 && <details className="card helper-details" style={{ marginBottom: 12 }}>
             <summary className="helper-bar" style={{ cursor: 'pointer', listStyle: 'none' }}>
               <span className="caret" style={{ fontSize: 10, marginRight: 6, display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
               <span className="smallcaps" style={{ color: 'var(--ink-4)', paddingRight: 8 }}>一括入力ヘルパー</span>
@@ -1083,13 +1098,13 @@ export function TargetSetting() {
                 )}
               </div>
             )}
-          </details>
+          </details>}
 
           {/* Table */}
           <div className="card" style={{ padding: 0 }}>
             <div className="card-head">
-              <div className="card-title"><span className="index">GRID</span>{dataType}入力 · 全科目 × 全月</div>
-              <span className="smallcaps">単位: 円 · TABでセル移動</span>
+              <div className="card-title"><span className="index">GRID</span>{storeId === 0 ? `${dataType} · 全店舗合計` : `${dataType}入力 · 全科目 × 全月`}</div>
+              <span className="smallcaps">{storeId === 0 ? '閲覧専用' : '単位: 円 · TABでセル移動'}</span>
             </div>
             <div className="table-scroll">
               <table className="ltable">
@@ -1112,11 +1127,13 @@ export function TargetSetting() {
                           const isChanged = changedCells.has(key)
                           return (
                             <td key={m} className={`num ${isChanged ? 'cell-changed' : ''}`} style={{ padding: 0 }}>
-                              <input className="cell-input" value={editValues[key] ?? ''}
-                                data-item-id={item.id} data-month={m}
-                                onFocus={e => e.target.select()}
-                                onChange={e => handleCellChange(item.id, m, e.target.value)}
-                                placeholder="—" />
+                              {storeId === 0
+                                ? <span className="cell-input" style={{ display: 'block' }}>{editValues[key] ? formatMan(parseFloat(editValues[key])) : '—'}</span>
+                                : <input className="cell-input" value={editValues[key] ?? ''}
+                                    data-item-id={item.id} data-month={m}
+                                    onFocus={e => e.target.select()}
+                                    onChange={e => handleCellChange(item.id, m, e.target.value)}
+                                    placeholder="—" />}
                             </td>
                           )
                         })}
@@ -1160,11 +1177,13 @@ export function TargetSetting() {
                           const isChanged = changedCells.has(key)
                           return (
                             <td key={m} className={`num ${isChanged ? 'cell-changed' : ''}`} style={{ padding: 0 }}>
-                              <input className="cell-input" value={editValues[key] ?? ''}
-                                data-item-id={item.id} data-month={m}
-                                onFocus={e => e.target.select()}
-                                onChange={e => handleCellChange(item.id, m, e.target.value)}
-                                placeholder="—" />
+                              {storeId === 0
+                                ? <span className="cell-input" style={{ display: 'block' }}>{editValues[key] ? formatMan(parseFloat(editValues[key])) : '—'}</span>
+                                : <input className="cell-input" value={editValues[key] ?? ''}
+                                    data-item-id={item.id} data-month={m}
+                                    onFocus={e => e.target.select()}
+                                    onChange={e => handleCellChange(item.id, m, e.target.value)}
+                                    placeholder="—" />}
                             </td>
                           )
                         })}
@@ -1212,13 +1231,35 @@ export function TargetSetting() {
                     })}
                     <td className="num tot-col">{totalSales ? formatPercent(totalProfit / totalSales) : '—'}</td>
                   </tr>
+                  {twinkleFeeItem && (
+                    <>
+                      <tr className={`profit-row${(totalProfit + FISCAL_MONTHS.reduce((s, m) => s + getTwinkleFee(m), 0)) < 0 ? ' loss' : ''}`}>
+                        <td className="col-label">営業利益（T代除く）</td>
+                        {FISCAL_MONTHS.map(m => {
+                          const s = getSalesAmount(m), e = getExpenseTotal(m), t = getTwinkleFee(m)
+                          const p = s - e + t
+                          return <td key={m} className="num">{s ? formatMan(p) : '—'}</td>
+                        })}
+                        <td className="num tot-col">{formatMan(totalProfit + FISCAL_MONTHS.reduce((s, m) => s + getTwinkleFee(m), 0))}</td>
+                      </tr>
+                      <tr className="rate-row">
+                        <td className="col-label">営業利益率（T代除く）</td>
+                        {FISCAL_MONTHS.map(m => {
+                          const s = getSalesAmount(m), e = getExpenseTotal(m), t = getTwinkleFee(m)
+                          const p = s - e + t
+                          return <td key={m} className="num">{s ? formatPercent(p / s) : '—'}</td>
+                        })}
+                        <td className="num tot-col">{totalSales ? formatPercent((totalProfit + FISCAL_MONTHS.reduce((s, m) => s + getTwinkleFee(m), 0)) / totalSales) : '—'}</td>
+                      </tr>
+                    </>
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
 
           {/* Save bar — always visible at bottom */}
-          {(totalChanges > 0 || totalSales > 0) && (
+          {storeId !== 0 && (totalChanges > 0 || totalSales > 0) && (
             <div className="savebar">
               <div className="summary">
                 <div className="item">
