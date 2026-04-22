@@ -104,6 +104,7 @@ export function TargetSetting() {
   const salesItem = useMemo(() => items.find(i => i.item_code === 'sales'), [items])
   const unitPriceItem = useMemo(() => items.find(i => i.item_code === 'unit_price'), [items])
   const discountItem = useMemo(() => items.find(i => i.item_code === 'discount'), [items])
+  const cogsItem = useMemo(() => items.find(i => i.item_code === 'cogs'), [items])
 
   function getCellValue(itemId: number, month: number): number {
     const v = editValues[cellKey(itemId, month)]
@@ -129,9 +130,12 @@ export function TargetSetting() {
   function getDiscountAmount(month: number): number {
     return discountItem ? getCellValue(discountItem.id, month) : 0
   }
+  function getCogsAmount(month: number): number {
+    return cogsItem ? getCellValue(cogsItem.id, month) : 0
+  }
   function getWithholdingTax(month: number): number {
-    const net = getSalesAmount(month) - getDiscountAmount(month)
-    return net > 0 ? Math.floor(net / 22) : 0  // 簡易課税（みなし仕入率50%）
+    const net = getSalesAmount(month) - getDiscountAmount(month) - getCogsAmount(month)
+    return net > 0 ? Math.floor(net / 11) : 0  // (売上−割引−仕入)÷11
   }
 
   function handleCellChange(itemId: number, month: number, value: string) {
