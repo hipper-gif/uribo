@@ -133,7 +133,8 @@ export function TargetSetting() {
   }
 
   function handlePaste(itemId: number, month: number, e: React.ClipboardEvent<HTMLInputElement>) {
-    const text = e.clipboardData.getData('text')
+    const raw = e.clipboardData.getData('text')
+    const text = raw.trimEnd()
     if (!text.includes('\t') && !text.includes('\n')) return // 単一値はデフォルト動作
     e.preventDefault()
 
@@ -142,7 +143,7 @@ export function TargetSetting() {
     const startMonthIdx = (FISCAL_MONTHS as readonly number[]).indexOf(month)
     if (startItemIdx < 0 || startMonthIdx < 0) return
 
-    const rows = text.trimEnd().split(/\r?\n/)
+    const rows = text.split(/\r?\n/)
     const patches: Record<CellKey, string> = {}
 
     rows.forEach((row, ri) => {
