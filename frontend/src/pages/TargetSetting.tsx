@@ -454,10 +454,10 @@ export function TargetSetting() {
     setRatiosLoaded(true)
   }
 
-  // Load ratios when variable helper opens
+  // Load ratios when data is available or variable helper opens
   useEffect(() => {
-    if (helperOpen === 'variable' && !ratiosLoaded) { loadVariableRatios() }
-  }, [helperOpen, ratiosLoaded])
+    if (!ratiosLoaded && data.length > 0) { loadVariableRatios() }
+  }, [ratiosLoaded, data])
 
   function applyVariableRatios() {
     if (!salesItem) return
@@ -471,6 +471,20 @@ export function TargetSetting() {
         const currSales = getCellValue(salesItem.id, m)
         if (currSales > 0) patches[cellKey(item.id, m)] = String(Math.round(currSales * rate))
       }
+    }
+    applyToState(patches)
+  }
+
+  function handleVariableRateChange(itemId: number, value: string) {
+    if (value !== '' && !/^\d*\.?\d*$/.test(value)) return
+    setVariableRatios(prev => ({ ...prev, [itemId]: value }))
+    if (!salesItem || value === '') return
+    const rate = parseFloat(value) / 100
+    if (isNaN(rate)) return
+    const patches: Record<CellKey, string> = {}
+    for (const m of FISCAL_MONTHS) {
+      const currSales = getCellValue(salesItem.id, m)
+      patches[cellKey(itemId, m)] = currSales > 0 ? String(Math.round(currSales * rate)) : ''
     }
     applyToState(patches)
   }
@@ -1108,9 +1122,25 @@ export function TargetSetting() {
                   </tr>
                   {expenseItems.map(item => {
                     const total = getRowTotal(item.id)
+                    const isVariable = variableItems.some(v => v.id === item.id)
                     return (
                       <tr key={item.id}>
-                        <td className="col-label">{item.item_name}</td>
+                        <td className="col-label">
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                            <span>{item.item_name}</span>
+                            {isVariable && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                                <input type="text" inputMode="decimal"
+                                  style={{ width: 40, textAlign: 'right', padding: '1px 3px', fontSize: 11, border: '1px solid var(--line)', borderRadius: 3, background: 'var(--paper)', fontFamily: 'var(--font-mono)' }}
+                                  value={variableRatios[item.id] ?? ''}
+                                  onFocus={e => e.target.select()}
+                                  onChange={e => handleVariableRateChange(item.id, e.target.value)}
+                                  placeholder="—" />
+                                <span style={{ fontSize: 10, color: 'var(--ink-4)' }}>%</span>
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         {FISCAL_MONTHS.map(m => {
                           const key = cellKey(item.id, m)
                           const isChanged = changedCells.has(key)
