@@ -132,6 +132,34 @@ export function TargetSetting() {
     setSaveMessage(null)
   }
 
+  function handlePaste(itemId: number, month: number, e: React.ClipboardEvent<HTMLInputElement>) {
+    const text = e.clipboardData.getData('text')
+    if (!text.includes('\t') && !text.includes('\n')) return // 単一値はデフォルト動作
+    e.preventDefault()
+
+    const allItems = [...salesItems, ...expenseItems]
+    const startItemIdx = allItems.findIndex(i => i.id === itemId)
+    const startMonthIdx = (FISCAL_MONTHS as readonly number[]).indexOf(month)
+    if (startItemIdx < 0 || startMonthIdx < 0) return
+
+    const rows = text.trimEnd().split(/\r?\n/)
+    const patches: Record<CellKey, string> = {}
+
+    rows.forEach((row, ri) => {
+      row.split('\t').forEach((rawVal, ci) => {
+        const itemIdx = startItemIdx + ri
+        const monthIdx = startMonthIdx + ci
+        if (itemIdx >= allItems.length || monthIdx >= FISCAL_MONTHS.length) return
+        const val = rawVal.trim().replace(/,/g, '') // 1,000,000 → 1000000
+        if (val === '') { patches[cellKey(allItems[itemIdx].id, FISCAL_MONTHS[monthIdx])] = ''; return }
+        if (!/^-?\d*\.?\d*$/.test(val)) return // 数値以外スキップ
+        patches[cellKey(allItems[itemIdx].id, FISCAL_MONTHS[monthIdx])] = val
+      })
+    })
+
+    if (Object.keys(patches).length > 0) applyToState(patches)
+  }
+
   function handleMetaChange(field: MetaField, month: number, value: string) {
     if ((field === 'fulltime' || field === 'parttime') && value !== '' && !/^\d*$/.test(value)) return
     const key = metaKey(field, month)
@@ -1017,7 +1045,9 @@ export function TargetSetting() {
                           return (
                             <td key={m} className={`num ${isChanged ? 'cell-changed' : ''}`} style={{ padding: 0 }}>
                               <input className="cell-input" value={editValues[key] ?? ''}
-                                onChange={e => handleCellChange(item.id, m, e.target.value)} placeholder="—" />
+                                onChange={e => handleCellChange(item.id, m, e.target.value)}
+                                onPaste={e => handlePaste(item.id, m, e)}
+                                placeholder="—" />
                             </td>
                           )
                         })}
