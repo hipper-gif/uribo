@@ -11,7 +11,7 @@ type CellKey = string
 function cellKey(itemId: number, month: number): CellKey { return `${itemId}-${month}` }
 type MetaField = 'fulltime' | 'parttime' | 'notes'
 function metaKey(field: MetaField, month: number): string { return `meta-${field}-${month}` }
-type HelperId = 'sales' | 'labor' | 'fixed' | 'variable'
+type HelperId = 'sales' | 'labor' | 'fixed' | 'variable' | 'all'
 
 export function TargetSetting() {
   const stores = useStores()
@@ -52,6 +52,7 @@ export function TargetSetting() {
   // Variable ratio helper — per-item ratio overrides
   const [variableRatios, setVariableRatios] = useState<Record<number, string>>({})
   const [ratiosLoaded, setRatiosLoaded] = useState(false)
+  const [applyingAll, setApplyingAll] = useState(false)
 
   const dataLookup = useMemo(() => {
     const map: Record<CellKey, BeautyMonthlyData> = {}
@@ -406,12 +407,128 @@ export function TargetSetting() {
     applyToState(patches)
   }
 
+  async function applyAll() {
+    if (!salesItem) return
+    const annual = parseFloat(salesAnnual)
+    if (!annual) return
+    setApplyingAll(true)
+    const allPatches: Record<CellKey, string> = {}
+    try {
+      // 1. 売上月次配分
+      const monthSales: Record<number, number> = {}
+      if (salesDist === 'equal') {
+        const monthly = Math.round(annual / 12)
+        FISCAL_MONTHS.forEach(m => { monthSales[m] = monthly })
+      } else {
+        const prev = await fetchPrevActuals()
+        const ps = prev.filter(d => d.item_id === salesItem.id)
+        const pt = ps.reduce((s, d) => s + parseFloat(d.amount), 0)
+        FISCAL_MONTHS.forEach(m => {
+          const pa = ps.find(d => d.month === m)
+          monthSales[m] = pt > 0 ? Math.round(annual * (pa ? parseFloat(pa.amount) : 0) / pt) : Math.round(annual / 12)
+        })
+      }
+      FISCAL_MONTHS.forEach(m => { allPatches[cellKey(salesItem.id, m)] = String(monthSales[m]) })
+
+      // 2. Mnemeスタッフ読込
+      let localStaff = mnemeStaff
+      let localStoreMap = storeMap
+      let localChecked = staffChecked
+      let localSalaryMap = staffSalary
+      if (!staffLoaded) {
+        const [staff, mapRes] = await Promise.all([fetchBeautyStaff(), apiGet<StoreMapEntry[]>('beauty_staff_store_map')])
+        localStaff = staff
+        localStoreMap = mapRes.data ?? []
+        const checked = new Set<number>()
+        const salaries: Record<number, string> = {}
+        for (const s of staff) {
+          const mapping = localStoreMap.find(mm => mm.mneme_employee_id === s.id)
+          if (mapping && mapping.store_id === storeId) checked.add(s.id)
+          if (s.base_salary != null) salaries[s.id] = String(s.base_salary)
+        }
+        localChecked = checked; localSalaryMap = salaries
+        setMnemeStaff(staff); setStoreMap(localStoreMap)
+        setStaffChecked(checked); setStaffSalary(prev => ({ ...salaries, ...prev }))
+        setStaffLoaded(true)
+      }
+
+      // 3. 人件費計算
+      const storeStaff = localStaff.filter(s => {
+        const mm = localStoreMap.find(x => x.mneme_employee_id === s.id)
+        return !mm || mm.store_id === storeId
+      })
+      const getLocalSalary = (emp: MnemeEmployee) => {
+        const ov = localSalaryMap[emp.id]
+        const base = ov !== undefined && ov !== '' ? (parseFloat(ov) || 0) : (emp.base_salary ?? 0)
+        if (emp.salary_type === '時給') return base * ((parseFloat(staffHours[emp.id] || '0') || 0))
+        return base
+      }
+      const localBaseTotal = storeStaff.filter(s => localChecked.has(s.id)).reduce((sum, s) => sum + getLocalSalary(s), 0)
+      const transportVal = parseFloat(transportMonthly) || 0
+      const incRate = (parseFloat(incentiveRate) || 0) / 100
+      const welRate = (parseFloat(welfareRate) || 0) / 100
+      const salaryItemObj = items.find(i => i.item_code === 'salary_total')
+      const transportItemObj = items.find(i => i.item_code === 'transport_total')
+      const welfareItemObj = items.find(i => i.item_code === 'legal_welfare')
+      FISCAL_MONTHS.forEach(m => {
+        const incentive = Math.round((monthSales[m] ?? 0) * incRate)
+        const salaryTotal = localBaseTotal + incentive
+        if (salaryItemObj) allPatches[cellKey(salaryItemObj.id, m)] = String(salaryTotal)
+        if (transportItemObj) allPatches[cellKey(transportItemObj.id, m)] = String(transportVal)
+        if (welfareItemObj) allPatches[cellKey(welfareItemObj.id, m)] = String(Math.round(salaryTotal * welRate))
+      })
+
+      // 4. 固定費（前年実績コピー）
+      const prev = await fetchPrevActuals()
+      for (const item of items.filter(i => i.item_category === '固定費')) {
+        for (const m of FISCAL_MONTHS) {
+          const pd = prev.find(d => d.item_id === item.id && d.month === m)
+          if (pd && parseFloat(pd.amount) !== 0) allPatches[cellKey(item.id, m)] = String(parseFloat(pd.amount))
+        }
+      }
+
+      // 5. 変動費（比率適用）
+      const prevSalesAll = prev.filter(d => d.item_id === salesItem.id)
+      const localRatios: Record<number, string> = { ...variableRatios }
+      if (!ratiosLoaded) {
+        for (const item of variableItems) {
+          if (localRatios[item.id] && localRatios[item.id] !== '') continue
+          let totalExp = 0, totalS = 0
+          for (const m of FISCAL_MONTHS) {
+            const pe = prev.find(d => d.item_id === item.id && d.month === m)
+            const ps = prevSalesAll.find(d => d.month === m)
+            if (pe && ps) { totalExp += parseFloat(pe.amount) || 0; totalS += parseFloat(ps.amount) || 0 }
+          }
+          if (totalS > 0) localRatios[item.id] = ((totalExp / totalS) * 100).toFixed(1)
+        }
+        setVariableRatios(localRatios)
+        setRatiosLoaded(true)
+      }
+      for (const item of variableItems) {
+        const rateStr = localRatios[item.id]
+        if (!rateStr) continue
+        const rate = parseFloat(rateStr) / 100
+        if (isNaN(rate)) continue
+        for (const m of FISCAL_MONTHS) {
+          const s = monthSales[m] ?? 0
+          if (s > 0) allPatches[cellKey(item.id, m)] = String(Math.round(s * rate))
+        }
+      }
+
+      applyToState(allPatches)
+      await saveStoreMap()
+    } finally {
+      setApplyingAll(false)
+    }
+  }
+
   const totalSales = FISCAL_MONTHS.reduce((s, m) => s + getSalesAmount(m), 0)
   const totalExp = FISCAL_MONTHS.reduce((s, m) => s + getExpenseTotal(m), 0)
   const totalProfit = totalSales - totalExp
   const years = Array.from({ length: 6 }, (_, i) => currentFiscalYear() - i)
 
   const HELPERS: { id: HelperId; label: string; sub: string }[] = [
+    { id: 'all', label: '★ まとめて設定', sub: '売上→支出 一括' },
     { id: 'sales', label: '① 売上配分', sub: '年額→月次展開' },
     { id: 'labor', label: '② 人件費', sub: 'Mneme連携' },
     { id: 'fixed', label: '③ 固定費', sub: '前年実績コピー' },
@@ -571,6 +688,61 @@ export function TargetSetting() {
               ))}
               {loadingPrev && <span style={{ fontSize: 11, color: 'var(--ink-3)', marginLeft: 4 }}>前年データ読込中…</span>}
             </div>
+
+            {helperOpen === 'all' && (
+              <div className="helper-body" style={{ flexDirection: 'column', gap: 12 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--ink-2)', lineHeight: 1.6 }}>
+                  年間売上目標を入力し「全科目に適用」を押すと、売上配分・人件費・固定費・変動費をまとめて計算します。<br />
+                  <span style={{ color: 'var(--ink-4)', fontSize: 11.5 }}>前年実績を参照するため初回は少し時間がかかります。各ヘルパーで個別調整も可能です。</span>
+                </div>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div className="helper-field">
+                    <label className="helper-label">年間売上目標</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input type="number" className="helper-input" style={{ width: 160 }} value={salesAnnual}
+                        onChange={e => setSalesAnnual(e.target.value)} placeholder="例: 20000000" />
+                      <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>円</span>
+                    </div>
+                  </div>
+                  <div className="helper-field">
+                    <label className="helper-label">配分方法</label>
+                    <div className="seg">
+                      <button className="seg-btn" aria-pressed={salesDist === 'equal'} onClick={() => setSalesDist('equal')}>均等</button>
+                      <button className="seg-btn" aria-pressed={salesDist === 'lastyear'} onClick={() => setSalesDist('lastyear')}>前年比率</button>
+                    </div>
+                  </div>
+                  <div className="helper-field">
+                    <label className="helper-label">交通費（月額）</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input type="number" className="helper-input" value={transportMonthly}
+                        onChange={e => setTransportMonthly(e.target.value)} placeholder="30000" />
+                      <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>円</span>
+                    </div>
+                  </div>
+                  <div className="helper-field">
+                    <label className="helper-label">インセンティブ率</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input type="number" className="helper-input" style={{ width: 70 }} value={incentiveRate}
+                        onChange={e => setIncentiveRate(e.target.value)} step="0.5" />
+                      <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>%</span>
+                    </div>
+                  </div>
+                  <div className="helper-field">
+                    <label className="helper-label">法定福利率</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input type="number" className="helper-input" style={{ width: 70 }} value={welfareRate}
+                        onChange={e => setWelfareRate(e.target.value)} step="0.1" />
+                      <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>%</span>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button className="btn btn-primary" onClick={applyAll} disabled={!salesAnnual || applyingAll}>
+                    {applyingAll ? '計算中...' : '全科目に適用'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {helperOpen === 'sales' && (
               <div className="helper-body">

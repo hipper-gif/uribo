@@ -4,7 +4,10 @@
       "Bash(bash:*)",
       "Bash(curl:*)",
       "Bash(python:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(xargs grep:*)",
+      "Bash(ssh:*)",
+      "Bash(xargs ls:*)"
     ]
   }
 }
