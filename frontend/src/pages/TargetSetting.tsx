@@ -103,6 +103,7 @@ export function TargetSetting() {
   const expenseItems = useMemo(() => displayItems.filter(i => i.item_category !== '売上'), [displayItems])
   const salesItem = useMemo(() => items.find(i => i.item_code === 'sales'), [items])
   const unitPriceItem = useMemo(() => items.find(i => i.item_code === 'unit_price'), [items])
+  const discountItem = useMemo(() => items.find(i => i.item_code === 'discount'), [items])
 
   function getCellValue(itemId: number, month: number): number {
     const v = editValues[cellKey(itemId, month)]
@@ -112,7 +113,7 @@ export function TargetSetting() {
     return FISCAL_MONTHS.reduce((s, m) => s + getCellValue(itemId, m), 0)
   }
   function getExpenseTotal(month: number): number {
-    return expenseItems.reduce((s, i) => s + getCellValue(i.id, month), 0)
+    return expenseItems.reduce((s, i) => s + getCellValue(i.id, month), 0) + getWithholdingTax(month)
   }
   function getSalesAmount(month: number): number {
     return salesItem ? getCellValue(salesItem.id, month) : 0
@@ -124,6 +125,13 @@ export function TargetSetting() {
     const sales = getSalesAmount(month)
     const price = getUnitPrice(month)
     return price > 0 ? Math.round(sales / price) : 0
+  }
+  function getDiscountAmount(month: number): number {
+    return discountItem ? getCellValue(discountItem.id, month) : 0
+  }
+  function getWithholdingTax(month: number): number {
+    const net = getSalesAmount(month) - getDiscountAmount(month)
+    return net > 0 ? Math.floor(net / 11) : 0
   }
 
   function handleCellChange(itemId: number, month: number, value: string) {
@@ -1120,6 +1128,16 @@ export function TargetSetting() {
                       </tr>
                     )
                   })}
+                  <tr style={{ background: 'var(--paper-2)' }}>
+                    <td className="col-label" style={{ color: 'var(--ink-3)' }}>預かり税（自動）</td>
+                    {FISCAL_MONTHS.map(m => {
+                      const tax = getWithholdingTax(m)
+                      return <td key={m} className="num" style={{ color: 'var(--ink-3)' }}>{tax > 0 ? formatMan(tax) : '—'}</td>
+                    })}
+                    <td className="num tot-col" style={{ color: 'var(--ink-3)' }}>
+                      {formatMan(FISCAL_MONTHS.reduce((s, m) => s + getWithholdingTax(m), 0))}
+                    </td>
+                  </tr>
                   <tr className="total-row">
                     <td className="col-label">支出合計</td>
                     {FISCAL_MONTHS.map(m => <td key={m} className="num">{getExpenseTotal(m) ? formatMan(getExpenseTotal(m)) : '—'}</td>)}
