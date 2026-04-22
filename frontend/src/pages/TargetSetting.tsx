@@ -132,9 +132,15 @@ export function TargetSetting() {
     setSaveMessage(null)
   }
 
-  function handlePaste(itemId: number, month: number, e: React.ClipboardEvent<HTMLInputElement>) {
-    const raw = e.clipboardData.getData('text')
+  // Excelコピペ: ネイティブpasteイベントで処理（React onPasteが発火しないケース対策）
+  const handlePasteRef = useCallback((e: ClipboardEvent) => {
+    const el = document.activeElement as HTMLInputElement | null
+    if (!el || !el.dataset.itemId) return
+    const itemId = Number(el.dataset.itemId)
+    const month = Number(el.dataset.month)
+    const raw = e.clipboardData?.getData('text/plain') ?? ''
     const text = raw.trimEnd()
+    if (!text) return
 
     // 単一値の貼り付け（カンマ除去して反映）
     if (!text.includes('\t') && !text.includes('\n')) {
@@ -170,7 +176,12 @@ export function TargetSetting() {
     })
 
     if (Object.keys(patches).length > 0) applyToState(patches)
-  }
+  }, [salesItems, expenseItems])
+
+  useEffect(() => {
+    document.addEventListener('paste', handlePasteRef)
+    return () => document.removeEventListener('paste', handlePasteRef)
+  }, [handlePasteRef])
 
   function handleMetaChange(field: MetaField, month: number, value: string) {
     if ((field === 'fulltime' || field === 'parttime') && value !== '' && !/^\d*$/.test(value)) return
@@ -1057,9 +1068,9 @@ export function TargetSetting() {
                           return (
                             <td key={m} className={`num ${isChanged ? 'cell-changed' : ''}`} style={{ padding: 0 }}>
                               <input className="cell-input" value={editValues[key] ?? ''}
+                                data-item-id={item.id} data-month={m}
                                 onFocus={e => e.target.select()}
                                 onChange={e => handleCellChange(item.id, m, e.target.value)}
-                                onPaste={e => handlePaste(item.id, m, e)}
                                 placeholder="—" />
                             </td>
                           )
