@@ -1057,6 +1057,7 @@ export function TargetSetting() {
                           return (
                             <td key={m} className={`num ${isChanged ? 'cell-changed' : ''}`} style={{ padding: 0 }}>
                               <input className="cell-input" value={editValues[key] ?? ''}
+                                onFocus={e => e.target.select()}
                                 onChange={e => handleCellChange(item.id, m, e.target.value)}
                                 onPaste={e => handlePaste(item.id, m, e)}
                                 placeholder="—" />
