@@ -146,22 +146,38 @@ jobs:
                   print(f"[FAIL] task:{task_id} — PATCH failed (HTTP {patch_status})")
           PYEOF
 
-      - name: Update last_pushed_at via Nicolio API
+      - name: Update project last_pushed_at and status via Nicolio API
         env:
           NICOLIO_API_URL: ${{ secrets.NICOLIO_API_URL }}
           NICOLIO_API_TOKEN: ${{ secrets.NICOLIO_API_TOKEN }}
           REPO_NAME: ${{ github.event.repository.name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
         run: |
           python3 - <<'PYEOF'
-          import os, urllib.request, json, sys
+          import os, re, subprocess, urllib.request, json, sys
           from datetime import datetime, timezone, timedelta
 
           API_URL   = os.environ["NICOLIO_API_URL"].rstrip("/")
           API_TOKEN = os.environ["NICOLIO_API_TOKEN"]
           REPO      = os.environ["REPO_NAME"]
+          BEFORE    = os.environ["BEFORE_SHA"]
+          AFTER     = os.environ["AFTER_SHA"]
           JST       = timezone(timedelta(hours=9))
 
           now_jst = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+
+          # コミットメッセージのステータスキーワード
+          # 使い方: feat: ○○実装 [deploy] → 公開中
+          STATUS_RE = re.compile(r'\[(deploy|test|fix|start)\]', re.IGNORECASE)
+          STATUS_MAP = {
+              'deploy': '公開中',
+              'test':   'テスト中',
+              'fix':    '改修中',
+              'start':  '製作中',
+          }
+          # 自動変更から保護するステータス（手動管理）
+          PROTECTED = {'停止中', '廃止', '企画中', '設計中'}
 
           def api_request(method, path, body=None):
               url = f"{API_URL}/{path}"
@@ -177,16 +193,40 @@ jobs:
               except urllib.error.HTTPError as e:
                   return e.code, {}
 
-          # リポジトリ名でprojectsテーブルを検索
-          status, data = api_request("GET", f"projects?name=eq.{REPO}&select=id,name")
+          # repo_name で検索（大文字小文字が混在するためこのカラムを使用）
+          status, data = api_request("GET", f"projects?repo_name=eq.{REPO}&select=id,name,status")
           if status != 200 or not data:
-              print(f"[SKIP] Project '{REPO}' not found in projects table")
+              print(f"[SKIP] Project with repo_name='{REPO}' not found")
               sys.exit(0)
 
-          project_id = data[0]["id"]
-          patch_status, _ = api_request("PATCH", f"projects?id=eq.{project_id}", {"last_pushed_at": now_jst})
-          if patch_status in (200, 204):
-              print(f"[OK] {REPO}: last_pushed_at = {now_jst}")
+          project = data[0]
+          project_id = project["id"]
+          current_status = project["status"]
+
+          patch_body = {"last_pushed_at": now_jst}
+
+          # コミットメッセージからステータスキーワードを検索
+          if BEFORE.strip("0") == "":
+              cmd = ["git", "log", "--format=%s", "-1", AFTER]
           else:
-              print(f"[FAIL] {REPO}: PATCH failed (HTTP {patch_status})")
+              cmd = ["git", "log", "--format=%s", f"{BEFORE}..{AFTER}"]
+
+          result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+          all_subjects = result.stdout.strip()
+
+          new_status = None
+          for m in STATUS_RE.finditer(all_subjects):
+              kw = m.group(1).lower()
+              new_status = STATUS_MAP[kw]  # 最後のキーワードを採用
+
+          if new_status and current_status not in PROTECTED and new_status != current_status:
+              patch_body["status"] = new_status
+
+          patch_status, _ = api_request("PATCH", f"projects?id=eq.{project_id}", patch_body)
+          if patch_status in (200, 204):
+              print(f"[OK] {project['name']}: last_pushed_at = {now_jst}")
+              if "status" in patch_body:
+                  print(f"[OK] {project['name']}: status {current_status} → {new_status}")
+          else:
+              print(f"[FAIL] {project['name']}: PATCH failed (HTTP {patch_status})")
           PYEOF
