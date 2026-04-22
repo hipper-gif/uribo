@@ -131,7 +131,7 @@ export function TargetSetting() {
   }
   function getWithholdingTax(month: number): number {
     const net = getSalesAmount(month) - getDiscountAmount(month)
-    return net > 0 ? Math.floor(net / 11) : 0
+    return net > 0 ? Math.floor(net / 22) : 0  // 簡易課税（みなし仕入率50%）
   }
 
   function handleCellChange(itemId: number, month: number, value: string) {
