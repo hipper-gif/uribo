@@ -778,7 +778,13 @@ export function TargetSetting() {
                   <>
                     {/* Staff list */}
                     <div>
-                      <div className="helper-label" style={{ marginBottom: 8 }}>スタッフ一覧（Mnemeから取得）</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <span className="helper-label">スタッフ一覧（Mnemeから取得）</span>
+                        <button className="btn" style={{ fontSize: 11, padding: '2px 8px' }}
+                          onClick={() => { setStaffLoaded(false); setMnemeStaff([]); setStoreMap([]) }}>
+                          再読込
+                        </button>
+                      </div>
                       {staffForCurrentStore.length === 0 ? (
                         <div style={{ fontSize: 12, color: 'var(--ink-3)', padding: '8px 0' }}>
                           美容部門のスタッフがMnemeに未登録です。先にMnemeにスタッフを追加してください。
