@@ -135,7 +135,18 @@ export function TargetSetting() {
   function handlePaste(itemId: number, month: number, e: React.ClipboardEvent<HTMLInputElement>) {
     const raw = e.clipboardData.getData('text')
     const text = raw.trimEnd()
-    if (!text.includes('\t') && !text.includes('\n')) return // 単一値はデフォルト動作
+
+    // 単一値の貼り付け（カンマ除去して反映）
+    if (!text.includes('\t') && !text.includes('\n')) {
+      const val = text.trim().replace(/,/g, '')
+      if (val === '' || /^-?\d*\.?\d*$/.test(val)) {
+        e.preventDefault()
+        handleCellChange(itemId, month, val)
+      }
+      return
+    }
+
+    // 複数セル（Excel TSV）の貼り付け
     e.preventDefault()
 
     const allItems = [...salesItems, ...expenseItems]
@@ -151,9 +162,9 @@ export function TargetSetting() {
         const itemIdx = startItemIdx + ri
         const monthIdx = startMonthIdx + ci
         if (itemIdx >= allItems.length || monthIdx >= FISCAL_MONTHS.length) return
-        const val = rawVal.trim().replace(/,/g, '') // 1,000,000 → 1000000
+        const val = rawVal.trim().replace(/,/g, '')
         if (val === '') { patches[cellKey(allItems[itemIdx].id, FISCAL_MONTHS[monthIdx])] = ''; return }
-        if (!/^-?\d*\.?\d*$/.test(val)) return // 数値以外スキップ
+        if (!/^-?\d*\.?\d*$/.test(val)) return
         patches[cellKey(allItems[itemIdx].id, FISCAL_MONTHS[monthIdx])] = val
       })
     })
