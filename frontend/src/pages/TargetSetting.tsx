@@ -1103,6 +1103,7 @@ export function TargetSetting() {
                     <th className="col-label">科目</th>
                     {FISCAL_MONTHS.map(m => <th key={m}>{MONTH_LABELS[m]}</th>)}
                     <th className="tot-col">合計</th>
+                    <th className="tot-col" style={{ width: 52 }}>構成比</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1128,6 +1129,7 @@ export function TargetSetting() {
                           )
                         })}
                         <td className="num tot-col">{total ? formatMan(total) : '—'}</td>
+                        <td className="num tot-col" style={{ fontSize: 11, color: 'var(--ink-3)' }}>{totalSales && total ? formatPercent(total / totalSales) : '—'}</td>
                       </tr>
                     )
                   })}
@@ -1140,6 +1142,7 @@ export function TargetSetting() {
                     <td className="num tot-col" style={{ color: 'var(--ink-3)' }}>
                       {FISCAL_MONTHS.reduce((s, m) => s + getCustomerCount(m), 0) || '—'}
                     </td>
+                    <td className="tot-col" />
                   </tr>
                   {expenseItems.map(item => {
                     const total = getRowTotal(item.id)
@@ -1178,6 +1181,7 @@ export function TargetSetting() {
                           )
                         })}
                         <td className="num tot-col">{total ? formatMan(total) : '—'}</td>
+                        <td className="num tot-col" style={{ fontSize: 11, color: 'var(--ink-3)' }}>{totalSales && total ? formatPercent(total / totalSales) : '—'}</td>
                       </tr>
                     )
                   })}
@@ -1190,11 +1194,15 @@ export function TargetSetting() {
                     <td className="num tot-col" style={{ color: 'var(--ink-3)' }}>
                       {formatMan(FISCAL_MONTHS.reduce((s, m) => s + getWithholdingTax(m), 0))}
                     </td>
+                    <td className="num tot-col" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                      {totalSales ? formatPercent(FISCAL_MONTHS.reduce((s, m) => s + getWithholdingTax(m), 0) / totalSales) : '—'}
+                    </td>
                   </tr>
                   <tr className="total-row">
                     <td className="col-label">支出合計</td>
                     {FISCAL_MONTHS.map(m => <td key={m} className="num">{getExpenseTotal(m) ? formatMan(getExpenseTotal(m)) : '—'}</td>)}
                     <td className="num tot-col">{formatMan(totalExp)}</td>
+                    <td className="num tot-col" style={{ fontSize: 11 }}>{totalSales ? formatPercent(totalExp / totalSales) : '—'}</td>
                   </tr>
                   <tr className={`profit-row${totalProfit < 0 ? ' loss' : ''}`}>
                     <td className="col-label">純利益</td>
@@ -1203,6 +1211,7 @@ export function TargetSetting() {
                       return <td key={m} className="num">{s ? formatMan(s - e) : '—'}</td>
                     })}
                     <td className="num tot-col">{formatMan(totalProfit)}</td>
+                    <td className="num tot-col" style={{ fontSize: 11 }}>{totalSales ? formatPercent(totalProfit / totalSales) : '—'}</td>
                   </tr>
                   <tr className="rate-row">
                     <td className="col-label">利益率</td>
@@ -1211,6 +1220,7 @@ export function TargetSetting() {
                       return <td key={m} className="num">{s ? formatPercent((s - e) / s) : '—'}</td>
                     })}
                     <td className="num tot-col">{totalSales ? formatPercent(totalProfit / totalSales) : '—'}</td>
+                    <td className="tot-col" />
                   </tr>
                   {twinkleFeeItem && (
                     <>
@@ -1222,6 +1232,7 @@ export function TargetSetting() {
                           return <td key={m} className="num">{s ? formatMan(p) : '—'}</td>
                         })}
                         <td className="num tot-col">{formatMan(totalProfit + FISCAL_MONTHS.reduce((s, m) => s + getTwinkleFee(m), 0))}</td>
+                        <td className="num tot-col" style={{ fontSize: 11 }}>{totalSales ? formatPercent((totalProfit + FISCAL_MONTHS.reduce((s, m) => s + getTwinkleFee(m), 0)) / totalSales) : '—'}</td>
                       </tr>
                       <tr className="rate-row">
                         <td className="col-label">営業利益率（T代除く）</td>
@@ -1231,6 +1242,7 @@ export function TargetSetting() {
                           return <td key={m} className="num">{s ? formatPercent(p / s) : '—'}</td>
                         })}
                         <td className="num tot-col">{totalSales ? formatPercent((totalProfit + FISCAL_MONTHS.reduce((s, m) => s + getTwinkleFee(m), 0)) / totalSales) : '—'}</td>
+                        <td className="tot-col" />
                       </tr>
                     </>
                   )}
