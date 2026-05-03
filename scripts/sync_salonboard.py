@@ -91,10 +91,17 @@ def parse_amount(raw: str) -> int:
 
 
 def parse_inner_tax(raw: str) -> int:
-    """セルテキストから「内消費税 N」の N を抽出。見つからなければ 0"""
+    """セルテキストから「（内消費税：N 円）」等の N を抽出。見つからなければ 0
+
+    実際の HTML 例:
+      <div>1,798,870 円</div>
+      <div>（内消費税：163,377 円）</div>
+    text_content() で取得すると "1,798,870 円\n（内消費税：163,377 円）" となる。
+    """
     if not raw:
         return 0
-    m = re.search(r"内消費税[\s　]*([-]?[\d,]+)", raw)
+    # 「内消費税」の後ろに 全角/半角コロン・空白等を挟んで数値が来るパターン
+    m = re.search(r"内消費税[：:\s　]*([-]?[\d,]+)", raw)
     if not m:
         return 0
     digits = re.sub(r"[^0-9-]", "", m.group(1))
