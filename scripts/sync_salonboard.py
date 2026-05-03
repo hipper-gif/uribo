@@ -27,6 +27,8 @@ import json
 import os
 import re
 import sys
+import time
+import urllib.parse
 import urllib.request
 import urllib.error
 from datetime import date
@@ -63,10 +65,23 @@ def fiscal_year_for(year: int, month: int) -> int:
 
 
 def parse_amount(raw: str) -> int:
-    """サロンボードのテキスト ("12,345" や "12,345 / 内消費税..." 等) から整数を抽出"""
-    head = raw.split("/")[0].strip()
+    """サロンボードのセルテキストから先頭行の整数を抽出
+
+    例:
+      "12,345"                       → 12345
+      "12,345 / 内消費税 1,234"      → 12345  (スラッシュで区切り)
+      "12,345\n内消費税 1,234"       → 12345  (改行で区切り、純売上のパターン)
+      "-1,234"                       → -1234
+      ""                             → 0
+    """
+    if not raw:
+        return 0
+    # 改行・スラッシュ・タブで分割した最初のトークンだけ採用
+    head = re.split(r"[\n\r/\t]", raw)[0].strip()
     digits = re.sub(r"[^0-9-]", "", head)
-    return int(digits) if digits else 0
+    if not digits or digits == "-":
+        return 0
+    return int(digits)
 
 
 def creds_for(store: str) -> tuple[str, str]:
@@ -148,7 +163,8 @@ def scrape_sales(page: Page) -> dict:
                 result["sales"] = parse_amount(amount_raw)
                 result["customers"] = parse_amount(count_raw)
             elif label == "割引":
-                result["discount"] = parse_amount(amount_raw)
+                # サロンボードは割引額をマイナス表示するが Uribo の discount は正の値
+                result["discount"] = abs(parse_amount(amount_raw))
 
     return result
 
@@ -169,9 +185,22 @@ def fetch_one_store(month: str, store: str) -> dict:
         page = context.new_page()
         page.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
         try:
-            login(page, store)
-            goto_aggregate(page, year, mon)
-            data = scrape_sales(page)
+            try:
+                login(page, store)
+                goto_aggregate(page, year, mon)
+                data = scrape_sales(page)
+            except Exception:
+                shot_dir = Path(__file__).parent / "debug"
+                shot_dir.mkdir(exist_ok=True)
+                shot = shot_dir / f"fail_{store}_{month}.png"
+                html = shot_dir / f"fail_{store}_{month}.html"
+                try:
+                    page.screenshot(path=str(shot), full_page=True)
+                    html.write_text(page.content(), encoding="utf-8")
+                    print(f"    デバッグ保存: {shot}")
+                except Exception as ee:
+                    print(f"    デバッグ保存失敗: {ee}")
+                raise
         finally:
             browser.close()
     print(f"    純売上={data['sales']:,} 客数={data['customers']:,} 割引={data['discount']:,}")
@@ -198,10 +227,14 @@ def _api_request(method: str, path: str, body: dict | None = None) -> list | dic
 
 def upsert_amount(store_id: int, fiscal_year: int, mon: int, item_id: int, amount: int):
     """beauty_monthly_data に (store_id, fiscal_year, month, data_type, item_id) でUPSERT"""
-    filt = (
-        f"beauty_monthly_data?store_id=eq.{store_id}&fiscal_year=eq.{fiscal_year}"
-        f"&month=eq.{mon}&data_type=eq.{DATA_TYPE}&item_id=eq.{item_id}"
-    )
+    qs = urllib.parse.urlencode({
+        "store_id": f"eq.{store_id}",
+        "fiscal_year": f"eq.{fiscal_year}",
+        "month": f"eq.{mon}",
+        "data_type": f"eq.{DATA_TYPE}",
+        "item_id": f"eq.{item_id}",
+    })
+    filt = f"beauty_monthly_data?{qs}"
     existing = _api_request("GET", filt)
     body = {"amount": str(amount)}
     if isinstance(existing, list) and existing:
@@ -247,7 +280,9 @@ def main():
     print(f"\n=== サロンボード同期 {month} ===")
     for i, store in enumerate(stores):
         if i > 0:
-            print()  # 店舗間の区切り
+            # bot対策レート制限回避のため店舗間に間隔を空ける
+            print("\n  (10秒待機)")
+            time.sleep(10)
         data = fetch_one_store(month, store)
         if args.dry_run:
             print(f"    [dry-run] APIには送信しません")
