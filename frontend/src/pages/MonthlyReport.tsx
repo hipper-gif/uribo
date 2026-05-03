@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
-import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan, calcDerivedAmount } from '../lib/types'
 
 export function MonthlyReport() {
   const stores = useStores()
@@ -26,6 +26,12 @@ export function MonthlyReport() {
     return groups
   }, [displayItems])
 
+  // 税金カテゴリの派生表示用 (預かり税は is_calculated=1 だが DB に値があり、
+  // 仕入消費税・納付税額は計算で出す。集計には加えない参考行として表示)
+  const taxRefItems = useMemo(() =>
+    items.filter(i => i.item_category === '税金' && i.is_calculated === 1).sort((a, b) => a.sort_order - b.sort_order),
+    [items])
+
   const aLookup = useMemo(() => {
     const map: Record<number, Record<number, number>> = {}
     for (const d of actualData) { if (!map[d.item_id]) map[d.item_id] = {}; map[d.item_id][d.month] = (map[d.item_id][d.month] ?? 0) + parseFloat(d.amount) }
@@ -36,6 +42,18 @@ export function MonthlyReport() {
     for (const d of targetData) { if (!map[d.item_id]) map[d.item_id] = {}; map[d.item_id][d.month] = (map[d.item_id][d.month] ?? 0) + parseFloat(d.amount) }
     return map
   }, [targetData])
+
+  // 月の item_code -> 数値 lookup を作る（派生計算用）
+  const codeValuesAt = (lk: Record<number, Record<number, number>>, m: number): Record<string, number> => {
+    const out: Record<string, number> = {}
+    for (const it of items) out[it.item_code] = lk[it.id]?.[m] ?? 0
+    return out
+  }
+  // 派生 or 実値どちらかの数値を返す
+  const itemValueAt = (item: typeof items[number], lk: Record<number, Record<number, number>>, m: number): number => {
+    const derived = calcDerivedAmount(item.item_code, codeValuesAt(lk, m))
+    return derived !== null ? derived : (lk[item.id]?.[m] ?? 0)
+  }
 
   const salesItem = items.find(i => i.item_code === 'sales')
   const customersItem = items.find(i => i.item_code === 'customers')
@@ -186,6 +204,29 @@ export function MonthlyReport() {
                                 <td className="num num-target">{it ? formatMan(it) : '—'}</td>
                                 <td className="num">{ia ? formatMan(ia) : '—'}</td>
                                 <td className={`num ${iach && iach <= 1 ? 'num-pos' : 'num-neg'}`}>{it && ia ? formatPercent(iach) : '—'}</td>
+                                <td />
+                                <td className="num num-dim">{ip ? formatMan(ip) : '—'}</td>
+                                <td className={`num ${imom && imom <= 1 ? 'num-pos' : 'num-neg'}`}>{ip && ia ? formatPercent(imom) : '—'}</td>
+                              </tr>
+                            )
+                          })}
+                          {/* 税金カテゴリの場合、預かり税・仕入消費税・納付税額を参考行として追加 */}
+                          {isOpen && cat === '税金' && taxRefItems.map(item => {
+                            const ia = itemValueAt(item, aLookup, month)
+                            const ip = itemValueAt(item, aLookup, prevMonth)
+                            const it = itemValueAt(item, tLookup, month)
+                            const imom = ip ? ia/ip : 0
+                            return (
+                              <tr key={`tax-${item.id}`} className="sub-row" style={{ color: 'var(--ink-3)' }}>
+                                <td className="col-label" style={{ paddingLeft: 32 }}>
+                                  {item.item_name}
+                                  <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--ink-3)' }}>
+                                    {item.item_code === 'withholding_tax' ? '(参考)' : '(自動計算)'}
+                                  </span>
+                                </td>
+                                <td className="num num-target">{it ? formatMan(it) : '—'}</td>
+                                <td className="num">{ia ? formatMan(ia) : '—'}</td>
+                                <td />
                                 <td />
                                 <td className="num num-dim">{ip ? formatMan(ip) : '—'}</td>
                                 <td className={`num ${imom && imom <= 1 ? 'num-pos' : 'num-neg'}`}>{ip && ia ? formatPercent(imom) : '—'}</td>

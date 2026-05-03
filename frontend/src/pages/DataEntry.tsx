@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useStores, useItemMaster } from '../lib/useBeautyData'
 import { apiGet, apiPost, apiPatch } from '../lib/api'
-import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, currentFiscalYear, formatAmount, formatPercent, formatMan } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, currentFiscalYear, formatAmount, formatPercent, formatMan, calcDerivedAmount } from '../lib/types'
 import type { DataType, BeautyMonthlyData, BeautyItemMaster } from '../lib/types'
 
 type FormValues = Record<number, string>
@@ -77,6 +77,13 @@ export function DataEntry() {
     return v ? (parseFloat(v) || 0) : 0
   }, [values])
 
+  // item_code -> 数値 の lookup（派生計算用）
+  const codeValues = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const it of items) out[it.item_code] = numVal(it.id)
+    return out
+  }, [items, numVal])
+
   const unitPrice = useMemo(() => {
     if (!salesItem || !customersItem) return 0
     const s = numVal(salesItem.id), c = numVal(customersItem.id)
@@ -84,8 +91,11 @@ export function DataEntry() {
   }, [salesItem, customersItem, numVal])
 
   const catTotal = useCallback((cat: string) => {
-    return (expenseGroups[cat] ?? []).reduce((s, i) => s + numVal(i.id), 0)
-  }, [expenseGroups, numVal])
+    // 派生計算項目（仕入消費税・納付税額など）はカテゴリ合計から除外して二重計上を防ぐ
+    return (expenseGroups[cat] ?? [])
+      .filter(i => calcDerivedAmount(i.item_code, codeValues) === null)
+      .reduce((s, i) => s + numVal(i.id), 0)
+  }, [expenseGroups, numVal, codeValues])
 
   const totalExp = useMemo(() => {
     let t = EXPENSE_CATEGORIES.reduce((s, c) => s + catTotal(c), 0)
@@ -260,19 +270,35 @@ export function DataEntry() {
                     </div>
                   </div>
                   <div>
-                    {catItems.map((item, i) => (
-                      <div key={item.id} className="entry-row" style={i === catItems.length - 1 ? { borderBottom: 'none' } : undefined}>
-                        <label>{item.item_name}</label>
-                        <span className="smallcaps" style={{ textAlign: 'right' }}>
-                          前月 {(() => {
-                            const pv = prevMonthData.find(d => d.item_id === item.id)
-                            return pv ? formatMan(parseFloat(pv.amount)) : '—'
-                          })()}
-                        </span>
-                        <input type="number" value={values[item.id] ?? ''} onChange={e => setValue(item.id, e.target.value)}
-                          placeholder="0" className="entry-input tnum" />
-                      </div>
-                    ))}
+                    {catItems.map((item, i) => {
+                      const lastStyle = i === catItems.length - 1 ? { borderBottom: 'none' } : undefined
+                      // 派生項目（仕入消費税・納付税額など）は入力欄ではなく計算結果を表示
+                      const derived = item.is_calculated ? calcDerivedAmount(item.item_code, codeValues) : null
+                      if (derived !== null) {
+                        return (
+                          <div key={item.id} className="entry-row entry-derived" style={lastStyle}>
+                            <span>{item.item_name}</span>
+                            <span className="smallcaps">自動計算</span>
+                            <span className="tnum" style={{ textAlign: 'right', color: 'var(--ink-2)' }}>
+                              {derived ? '¥' + formatAmount(Math.round(derived)) : '—'}
+                            </span>
+                          </div>
+                        )
+                      }
+                      return (
+                        <div key={item.id} className="entry-row" style={lastStyle}>
+                          <label>{item.item_name}</label>
+                          <span className="smallcaps" style={{ textAlign: 'right' }}>
+                            前月 {(() => {
+                              const pv = prevMonthData.find(d => d.item_id === item.id)
+                              return pv ? formatMan(parseFloat(pv.amount)) : '—'
+                            })()}
+                          </span>
+                          <input type="number" value={values[item.id] ?? ''} onChange={e => setValue(item.id, e.target.value)}
+                            placeholder="0" className="entry-input tnum" />
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )
