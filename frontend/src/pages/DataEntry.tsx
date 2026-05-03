@@ -196,16 +196,11 @@ export function DataEntry() {
                 <div className="card-title"><span className="index">01</span>売上</div>
               </div>
               <div>
-                {topItems.map((item, i) => (
-                  item.is_calculated ? (
-                    <div key={item.id} className="entry-row entry-derived" style={i === topItems.length - 1 ? { borderBottom: 'none' } : undefined}>
-                      <span>{item.item_name}</span>
-                      <span className="smallcaps">自動計算</span>
-                      <span className="tnum" style={{ textAlign: 'right', color: 'var(--ink-2)' }}>
-                        {item.item_code === 'unit_price' && unitPrice ? '¥' + formatAmount(unitPrice) : '—'}
-                      </span>
-                    </div>
-                  ) : (
+                {topItems.map((item, i) => {
+                  // customers は item_master 上 is_calculated=1 だが、サロンボード自動取込
+                  // および手入力対応のため入力欄を表示する（unit_price のみ自動計算）
+                  const showAsInput = !item.is_calculated || item.item_code === 'customers'
+                  return showAsInput ? (
                     <div key={item.id} className="entry-row" style={i === topItems.length - 1 ? { borderBottom: 'none' } : undefined}>
                       <label>{item.item_name}</label>
                       <span className="smallcaps" style={{ textAlign: 'right' }}>
@@ -219,8 +214,16 @@ export function DataEntry() {
                       <input type="number" value={values[item.id] ?? ''} onChange={e => setValue(item.id, e.target.value)}
                         placeholder="0" className="entry-input tnum" />
                     </div>
+                  ) : (
+                    <div key={item.id} className="entry-row entry-derived" style={i === topItems.length - 1 ? { borderBottom: 'none' } : undefined}>
+                      <span>{item.item_name}</span>
+                      <span className="smallcaps">自動計算</span>
+                      <span className="tnum" style={{ textAlign: 'right', color: 'var(--ink-2)' }}>
+                        {item.item_code === 'unit_price' && unitPrice ? '¥' + formatAmount(unitPrice) : '—'}
+                      </span>
+                    </div>
                   )
-                ))}
+                })}
                 {/* Derived unit price if not in items */}
                 {!topItems.find(i => i.item_code === 'unit_price') && (
                   <div className="entry-row entry-derived" style={{ borderBottom: 'none' }}>

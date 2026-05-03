@@ -12,10 +12,12 @@
     .env にサロンボードの認証情報をセット（.env.example 参照）
 
 取得→マッピング:
-    純売上 (金額) → beauty_item_master.sales       (item_id=1)
-    純売上 (客数) → beauty_item_master.customers   (item_id=2)
+    総売上 (金額) → beauty_item_master.sales       (item_id=1)
+    総売上 (客数) → beauty_item_master.customers   (item_id=2)
     割引   (金額) → beauty_item_master.discount    (item_id=4)
     data_type は常に "実績"。同月の既存レコードは PATCH、無ければ POST。
+    （Uribo の計算式は net_profit = sales - discount - 経費 なので
+      sales には割引控除前の「総売上」を入れる必要がある）
 
 注意:
     サロンボードは Akamai bot 対策のため headless=False 必須。
@@ -137,7 +139,16 @@ def goto_aggregate(page: Page, year: int, month: int):
 
 
 def scrape_sales(page: Page) -> dict:
-    """純売上 / 客数 / 割引 を抽出"""
+    """総売上 / 客数 / 割引 を抽出
+
+    サロンボードの売上情報セクションは2テーブル構成:
+      table1: 施術 / オプション / 商品 / 総売上    (金額のみ。客数列は空)
+      table2: 割引 / 純売上                          (純売上行に客数あり)
+    Uribo は sales=総売上 + discount で純利益を算出するため、
+      sales = 総売上行の金額
+      customers = 純売上行の客数 (= 会計件数)
+      discount = 割引行の金額 (絶対値)
+    """
     container = page.locator("div.fl:has(h3.mod_title03:text-is('売上情報'))").first
     tables = container.locator("table.mod_table03")
 
@@ -159,8 +170,10 @@ def scrape_sales(page: Page) -> dict:
             amount_raw = (tds.nth(0).text_content() or "").strip()
             count_raw = (tds.nth(1).text_content() or "").strip()
 
-            if label == "純売上":
+            if label == "総売上":
                 result["sales"] = parse_amount(amount_raw)
+            elif label == "純売上":
+                # 客数（会計件数）は純売上行にしか入っていない
                 result["customers"] = parse_amount(count_raw)
             elif label == "割引":
                 # サロンボードは割引額をマイナス表示するが Uribo の discount は正の値
