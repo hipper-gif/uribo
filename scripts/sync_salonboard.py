@@ -12,12 +12,15 @@
     .env にサロンボードの認証情報をセット（.env.example 参照）
 
 取得→マッピング:
-    総売上 (金額) → beauty_item_master.sales       (item_id=1)
-    総売上 (客数) → beauty_item_master.customers   (item_id=2)
-    割引   (金額) → beauty_item_master.discount    (item_id=4)
+    総売上 (金額)         → beauty_item_master.sales            (item_id=1)
+    純売上 (客数)         → beauty_item_master.customers        (item_id=2)
+    割引   (金額)         → beauty_item_master.discount         (item_id=4)
+    純売上 内消費税(金額) → beauty_item_master.withholding_tax  (item_id=24)
     data_type は常に "実績"。同月の既存レコードは PATCH、無ければ POST。
     （Uribo の計算式は net_profit = sales - discount - 経費 なので
-      sales には割引控除前の「総売上」を入れる必要がある）
+      sales には割引控除前の「総売上」を入れる必要がある。
+      預かり税は純売上セルの "金額\n内消費税 N" の N を直接拾う。
+      仕入の税額を引いた納付額は UI 側で計算する想定）
 
 注意:
     サロンボードは Akamai bot 対策のため headless=False 必須。
@@ -53,6 +56,7 @@ STORE_LABEL = {"neyagawa": "寝屋川店", "moriguchi": "守口店"}
 ITEM_SALES = 1
 ITEM_CUSTOMERS = 2
 ITEM_DISCOUNT = 4
+ITEM_WITHHOLDING_TAX = 24
 
 DATA_TYPE = "実績"
 
@@ -81,6 +85,19 @@ def parse_amount(raw: str) -> int:
     # 改行・スラッシュ・タブで分割した最初のトークンだけ採用
     head = re.split(r"[\n\r/\t]", raw)[0].strip()
     digits = re.sub(r"[^0-9-]", "", head)
+    if not digits or digits == "-":
+        return 0
+    return int(digits)
+
+
+def parse_inner_tax(raw: str) -> int:
+    """セルテキストから「内消費税 N」の N を抽出。見つからなければ 0"""
+    if not raw:
+        return 0
+    m = re.search(r"内消費税[\s　]*([-]?[\d,]+)", raw)
+    if not m:
+        return 0
+    digits = re.sub(r"[^0-9-]", "", m.group(1))
     if not digits or digits == "-":
         return 0
     return int(digits)
@@ -152,7 +169,7 @@ def scrape_sales(page: Page) -> dict:
     container = page.locator("div.fl:has(h3.mod_title03:text-is('売上情報'))").first
     tables = container.locator("table.mod_table03")
 
-    result = {"sales": 0, "customers": 0, "discount": 0}
+    result = {"sales": 0, "customers": 0, "discount": 0, "withholding_tax": 0}
 
     for ti in range(tables.count()):
         table = tables.nth(ti)
@@ -173,8 +190,9 @@ def scrape_sales(page: Page) -> dict:
             if label == "総売上":
                 result["sales"] = parse_amount(amount_raw)
             elif label == "純売上":
-                # 客数（会計件数）は純売上行にしか入っていない
+                # 客数（会計件数）と内消費税は純売上行にしかない
                 result["customers"] = parse_amount(count_raw)
+                result["withholding_tax"] = parse_inner_tax(amount_raw)
             elif label == "割引":
                 # サロンボードは割引額をマイナス表示するが Uribo の discount は正の値
                 result["discount"] = abs(parse_amount(amount_raw))
@@ -216,7 +234,10 @@ def fetch_one_store(month: str, store: str) -> dict:
                 raise
         finally:
             browser.close()
-    print(f"    純売上={data['sales']:,} 客数={data['customers']:,} 割引={data['discount']:,}")
+    print(
+        f"    総売上={data['sales']:,} 客数={data['customers']:,} "
+        f"割引={data['discount']:,} 内消費税={data['withholding_tax']:,}"
+    )
     return data
 
 
@@ -271,9 +292,10 @@ def push_to_uribo(store: str, month: str, data: dict):
     sid = STORE_TO_ID[store]
 
     pairs = [
-        (ITEM_SALES, data["sales"], "純売上"),
+        (ITEM_SALES, data["sales"], "総売上"),
         (ITEM_CUSTOMERS, data["customers"], "客数"),
         (ITEM_DISCOUNT, data["discount"], "割引"),
+        (ITEM_WITHHOLDING_TAX, data["withholding_tax"], "預かり税"),
     ]
     for item_id, value, label in pairs:
         action = upsert_amount(sid, fy, mon, item_id, value)
