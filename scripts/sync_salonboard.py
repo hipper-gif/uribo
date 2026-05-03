@@ -115,7 +115,11 @@ def creds_for(store: str) -> tuple[str, str]:
     return uid, pwd
 
 
-def login(page: Page, store: str):
+def login(page: Page, store: str, interactive: bool = True):
+    """通常ログイン。タイムアウトしたら CAPTCHA 等の可能性があり手動介入を待つ。
+
+    interactive=False の場合（cron 実行など）はタイムアウト時に例外送出。
+    """
     uid, pwd = creds_for(store)
     if not page.url.startswith("https://salonboard.com/login"):
         page.goto(LOGIN_URL, wait_until="domcontentloaded")
@@ -123,7 +127,39 @@ def login(page: Page, store: str):
     page.fill('input[name="userId"]', uid)
     page.fill('input[name="password"]', pwd)
     page.click("a.common-CNCcommon__primaryBtn.loginBtnSize")
-    page.wait_for_url("**/KLP/top/**", timeout=20000)
+
+    try:
+        page.wait_for_url("**/KLP/top/**", timeout=20000)
+        return
+    except Exception:
+        pass
+
+    if not interactive:
+        raise SystemExit(
+            f"  {STORE_LABEL[store]} のログインが完了しませんでした"
+            " (CAPTCHA 等の可能性。--non-interactive を外して再実行してください)"
+        )
+
+    # 手動介入待ち: ブラウザは開いたまま
+    print()
+    print(f"  [!] {STORE_LABEL[store]} のログインが自動完了しませんでした。")
+    print(f"      開いているブラウザで CAPTCHA / 追加認証を手動で解いてください。")
+    print(f"      ログイン後トップ画面 (URL に /KLP/top/) に到達したら Enter を押下。")
+    print(f"      中止する場合は Ctrl+C")
+    try:
+        input("    > Enter で続行: ")
+    except (KeyboardInterrupt, EOFError):
+        raise SystemExit("\n  中止されました")
+
+    # ユーザーが Enter を押したあと、まだ遷移中かもしれないので最大2分待つ
+    if "/KLP/top/" not in page.url:
+        try:
+            page.wait_for_url("**/KLP/top/**", timeout=120000)
+        except Exception:
+            raise SystemExit(
+                f"  まだ {STORE_LABEL[store]} のトップに到達していません (現在 URL: {page.url})。中止します"
+            )
+    print(f"  ログイン継続: {page.url}")
 
 
 def goto_aggregate(page: Page, year: int, month: int):
@@ -200,7 +236,7 @@ def scrape_sales(page: Page) -> dict:
     return result
 
 
-def fetch_one_store(month: str, store: str) -> dict:
+def fetch_one_store(month: str, store: str, interactive: bool = True) -> dict:
     year_s, month_s = month.split("-")
     year, mon = int(year_s), int(month_s)
 
@@ -217,7 +253,7 @@ def fetch_one_store(month: str, store: str) -> dict:
         page.add_init_script("delete Object.getPrototypeOf(navigator).webdriver")
         try:
             try:
-                login(page, store)
+                login(page, store, interactive=interactive)
                 goto_aggregate(page, year, mon)
                 data = scrape_sales(page)
             except Exception:
@@ -307,10 +343,15 @@ def main():
     parser.add_argument("--store", choices=["neyagawa", "moriguchi", "both"], default="both")
     parser.add_argument("--month", help="対象月 YYYY-MM（省略時は前月）")
     parser.add_argument("--dry-run", action="store_true", help="取得結果だけ表示してAPIには送らない")
+    parser.add_argument(
+        "--non-interactive", action="store_true",
+        help="CAPTCHA 等で自動ログイン失敗しても手動介入を待たず即エラー終了 (cron 運用用)",
+    )
     args = parser.parse_args()
 
     month = args.month or prev_month_str()
     stores = ["neyagawa", "moriguchi"] if args.store == "both" else [args.store]
+    interactive = not args.non_interactive
 
     print(f"\n=== サロンボード同期 {month} ===")
     for i, store in enumerate(stores):
@@ -318,7 +359,7 @@ def main():
             # bot対策レート制限回避のため店舗間に間隔を空ける
             print("\n  (10秒待機)")
             time.sleep(10)
-        data = fetch_one_store(month, store)
+        data = fetch_one_store(month, store, interactive=interactive)
         if args.dry_run:
             print(f"    [dry-run] APIには送信しません")
         else:
