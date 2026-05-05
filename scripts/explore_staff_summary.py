@@ -122,33 +122,21 @@ def goto_staff_summary(page: Page, year: int, month: int, log) -> None:
         time.sleep(1.0)
         log(f"[nav] now at: {page.url}")
 
-    # 期間: 先月（指定月）の1日〜末日
-    last_day = calendar.monthrange(year, month)[1]
-    year_s = f"{year}"
-    month_s = f"{month:02d}"
-    start_compact = f"{year_s}{month_s}01"
-    end_compact = f"{year_s}{month_s}{last_day:02d}"
-    start_disp = f"{year}年{month}月1日"
-    end_disp = f"{year}年{month}月{last_day}日"
-
-    # サロンボードの集計画面は #scopeDateFrom / #dispDateFrom が使われている（既存スクリプトと同じ可能性）
-    has_scope = page.locator("#scopeDateFrom").count() > 0
-    if has_scope:
-        log("[nav] set period via #scopeDateFrom/#dispDateFrom")
-        page.evaluate(
-            """([sc1, di1, sc2, di2]) => {
-                document.querySelector('#scopeDateFrom').value = sc1;
-                if (document.querySelector('#dispDateFrom'))
-                    document.querySelector('#dispDateFrom').value = di1;
-                if (document.querySelector('#scopeDateTo'))
-                    document.querySelector('#scopeDateTo').value = sc2;
-                if (document.querySelector('#dispDateTo'))
-                    document.querySelector('#dispDateTo').value = di2;
-            }""",
-            [start_compact, start_disp, end_compact, end_disp],
-        )
+    # 期間: 「先月」ボタンをクリック（#lastMonthSet）
+    last_btn = page.locator("#lastMonthSet")
+    if last_btn.count() > 0:
+        log("[nav] click '#lastMonthSet' (先月ボタン)")
+        last_btn.first.click()
+        time.sleep(0.5)
     else:
-        log("[nav][warn] #scopeDateFrom が見つからない。期間UIは要調査")
+        # フォールバック: テキスト '先月' のリンクを探す
+        log("[nav][warn] #lastMonthSet not found, fallback to text-based")
+        text_btn = page.locator("a:has-text('先月')")
+        if text_btn.count() > 0:
+            text_btn.first.click()
+            time.sleep(0.5)
+        else:
+            log("[nav][err] '先月' ボタンが見つかりません")
 
     # 集計ボタン
     log("[nav] click '集計' button")
