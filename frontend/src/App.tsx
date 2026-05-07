@@ -4,6 +4,7 @@ import { QuarterlyView } from './pages/QuarterlyView'
 import { MonthlyReport } from './pages/MonthlyReport'
 import { DataEntry } from './pages/DataEntry'
 import { TargetSetting } from './pages/TargetSetting'
+import { Payroll } from './pages/Payroll'
 
 const NAV = [
   { to: '/', label: '年間', idx: '01' },
@@ -11,6 +12,7 @@ const NAV = [
   { to: '/monthly', label: '月次', idx: '03' },
   { to: '/entry', label: '入力', idx: '04' },
   { to: '/targets', label: '目標', idx: '05' },
+  { to: '/payroll', label: '給与', idx: '06' },
 ]
 
 export default function App() {
@@ -48,6 +50,7 @@ export default function App() {
             <Route path="/monthly" element={<MonthlyReport />} />
             <Route path="/entry" element={<DataEntry />} />
             <Route path="/targets" element={<TargetSetting />} />
+            <Route path="/payroll" element={<Payroll />} />
           </Routes>
         </main>
       </div>
