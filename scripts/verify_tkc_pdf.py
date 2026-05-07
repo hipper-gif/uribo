@@ -142,16 +142,20 @@ def parse_payslip_pdf(pdf_path: Path) -> list[dict]:
         # 5. 社会保険料合計・所得税・住民税
         # ラベル: 「健康保険 厚生年金 雇用保険 社会保険料合計 課税対象額 所 得 税 住 民 税 ...」
         # 値: [健保, 厚年, 雇用, 社保合計, 課税対象額, 所得税, 住民税, ...]
+        # PDF構造: 「健康保険…食事代」行 → 「控」記号行 → 値行 のため数値含む行を探す
         for i, line in enumerate(lines):
             if "健康保険" in line and "厚生年金" in line and "雇用保険" in line:
-                cand = lines[i + 1] if i + 1 < len(lines) else ""
-                nums = extract_numbers(cand)
-                if len(nums) >= 4:
-                    record["social_insurance_total"] = nums[3]
-                if len(nums) >= 6:
-                    record["income_tax"] = nums[5]
-                if len(nums) >= 7:
-                    record["resident_tax"] = nums[6]
+                for j in range(i + 1, min(i + 5, len(lines))):
+                    cand = lines[j]
+                    nums = extract_numbers(cand)
+                    if len(nums) >= 3:
+                        if len(nums) >= 4:
+                            record["social_insurance_total"] = nums[3]
+                        if len(nums) >= 6:
+                            record["income_tax"] = nums[5]
+                        if len(nums) >= 7:
+                            record["resident_tax"] = nums[6]
+                        break
                 break
 
         # 4. 立替金: 「貸付金返済 立替金 食事代」直後の行から2番目の値（位置依存・取れない場合あり）
