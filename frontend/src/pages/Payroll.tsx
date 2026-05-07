@@ -95,6 +95,36 @@ export function Payroll() {
     localStorage.setItem('payroll_view_mode', m)
   }
 
+  const [syncRunning, setSyncRunning] = useState(false)
+
+  function startStatusPolling() {
+    setSyncRunning(true)
+    const intervalId = setInterval(async () => {
+      try {
+        const res = await fetch('http://localhost:8765/status')
+        if (!res.ok) return
+        const data = await res.json()
+        if (!data.running) {
+          clearInterval(intervalId)
+          setSyncRunning(false)
+          if (data.returncode === 0) {
+            // 自動でデータ再読み込み
+            await load()
+            alert('✅ サロンボード取得完了！画面を更新しました。')
+          } else {
+            const tail = (data.log_tail || []).slice(-15).join('\n')
+            alert(`⚠ 実行終了 (rc=${data.returncode})\n\n最終ログ:\n${tail}`)
+          }
+        }
+      } catch {/* ignore - server may be down */}
+    }, 3000)
+    // 5分でタイムアウト
+    setTimeout(() => {
+      clearInterval(intervalId)
+      setSyncRunning(false)
+    }, 5 * 60 * 1000)
+  }
+
   const empMap = useMemo(() => {
     const m: Record<number, MnemeEmployee> = {}
     for (const s of staff) m[s.id] = s
@@ -257,26 +287,65 @@ export function Payroll() {
         const today = new Date()
         const executableFrom = new Date(year, month, 1) // y年m月の翌月1日
         const isExecutable = today >= executableFrom
-        const cmd = `cd C:\\Users\\nikon\\projects\\uribo\\scripts; python sync_salonboard.py --with-staff --month ${year}-${String(month).padStart(2, '0')}`
+        const monthStr = `${year}-${String(month).padStart(2, '0')}`
+        const cmd = `cd C:\\Users\\nikon\\projects\\uribo\\scripts; python sync_salonboard.py --with-staff --month ${monthStr}`
+
         async function runSync() {
+          // ローカルランナーへ実行依頼
           try {
-            await navigator.clipboard.writeText(cmd)
-            alert('実行コマンドをクリップボードにコピーしました。\n\n手順:\n1. PowerShellを開く\n2. 貼り付け (Ctrl+V) → Enter\n3. CAPTCHAが出たら解いてログイン\n4. 完了後、この画面の「更新」ボタンをクリック')
-          } catch {
-            window.prompt('以下をコピーしてPowerShellで実行してください', cmd)
+            const res = await fetch('http://localhost:8765/sync', {
+              method: 'POST',
+              mode: 'cors',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ month: monthStr, mode: 'with-staff' }),
+            })
+            if (res.status === 202) {
+              alert('🚀 実行を開始しました\n\nサロンボードのブラウザが立ち上がります。\n• CAPTCHAが出たら手動で解いてください\n• 完了後（1-2分）、この画面の「更新」をクリック')
+              startStatusPolling()
+              return
+            }
+            if (res.status === 409) {
+              alert('既に実行中です。完了までお待ちください。')
+              return
+            }
+            throw new Error('HTTP ' + res.status)
+          } catch (err) {
+            // ローカルランナー未起動 → クリップボードフォールバック
+            try {
+              await navigator.clipboard.writeText(cmd)
+            } catch {/* ignore */}
+            const setup = confirm(
+              'ローカルランナーが起動していません\n\n' +
+              '【今すぐ手動実行】OKを押してこの後の手順:\n' +
+              '  1. PowerShellを開く\n' +
+              '  2. クリップボードにコピー済みのコマンドを貼り付け\n' +
+              '  3. CAPTCHAを解いて完了\n\n' +
+              '【ワンクリック実行を有効化】キャンセルを押すと方法を表示'
+            )
+            if (!setup) {
+              alert(
+                '🛠 ローカルランナー初期セットアップ\n\n' +
+                '管理者権限のPowerShellで一度だけ実行:\n' +
+                '  powershell -ExecutionPolicy Bypass -File ' +
+                'C:\\Users\\nikon\\projects\\uribo\\scripts\\register_local_runner.ps1\n\n' +
+                '次回ログオン時から自動でlocalhost:8765が起動します。\n' +
+                '今すぐ起動: start_local_runner.bat をダブルクリック'
+              )
+            }
           }
         }
+
         return (
           <div className="payroll-empty">
             <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>{year}年{month}月分のデータはまだ投入されていません</h3>
             {isExecutable ? (
               <>
-                <button className="payroll-btn-primary" onClick={runSync} style={{ fontSize: 15, padding: '12px 24px' }}>
-                  📥 サロンボードから取得して投入
+                <button className="payroll-btn-primary" onClick={runSync} disabled={syncRunning} style={{ fontSize: 15, padding: '12px 24px' }}>
+                  {syncRunning ? '⏳ 実行中... (サロンボードのブラウザで操作してください)' : '📥 サロンボードから取得して投入'}
                 </button>
                 <p style={{ marginTop: 16, fontSize: 12, color: '#888', textAlign: 'left', lineHeight: 1.6 }}>
-                  ※ ボタンを押すと実行コマンドがクリップボードにコピーされます。<br/>
-                  PowerShellに貼り付けて実行 → サロンボードログイン (必要ならCAPTCHA手動解決) → 完了後この画面を「更新」してください。
+                  ※ ローカルランナー(localhost:8765)が起動していれば、このボタンで直接実行されます。<br/>
+                  起動していない場合は手動実行用コマンドがクリップボードにコピーされます。
                 </p>
               </>
             ) : (
