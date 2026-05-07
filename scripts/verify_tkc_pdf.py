@@ -26,6 +26,8 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import urllib.parse
 import urllib.request
@@ -378,8 +380,34 @@ def upsert_monthly_data(store_id: int, fiscal_year: int, month: int, item_id: in
     return "inserted"
 
 
+def upload_pdf_to_server(local_pdf: Path, year: int, month: int) -> bool:
+    """PDFをサーバの非公開ディレクトリに scp。爽夏さんがUriboから開けるように。"""
+    ssh_key = Path(os.path.expanduser("~/.ssh/id_xserver_panel"))
+    if not ssh_key.exists():
+        print(f"  [warn] SSH鍵が見つかりません: {ssh_key} - PDFアップロードをスキップ")
+        return False
+    if not shutil.which("scp"):
+        print("  [warn] scp コマンドが見つかりません - PDFアップロードをスキップ")
+        return False
+    remote_name = f"{year:04d}-{month:02d}.pdf"
+    remote = f"twinklemark@sv16114.xserver.jp:~/twinklemark.xsrv.jp/private/payroll_pdfs/{remote_name}"
+    cmd = ["scp", "-P", "10022", "-i", str(ssh_key), str(local_pdf), remote]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if r.returncode == 0:
+            print(f"  ✓ PDFアップロード成功: private/payroll_pdfs/{remote_name}")
+            return True
+        else:
+            print(f"  [warn] PDFアップロード失敗 (rc={r.returncode}): {r.stderr[:200]}")
+            return False
+    except Exception as e:
+        print(f"  [warn] PDFアップロード例外: {e}")
+        return False
+
+
 def apply_to_db(year: int, month: int, pdf_records: list[dict],
-                alias_map: dict[str, dict], pdf_filename: str) -> None:
+                alias_map: dict[str, dict], pdf_filename: str,
+                pdf_path: Path | None = None) -> None:
     """PDFの値を beauty_payroll_monthly + beauty_monthly_data に反映"""
     print("\n=== DB反映 (--apply) ===")
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -440,6 +468,11 @@ def apply_to_db(year: int, month: int, pdf_records: list[dict],
         a1 = upsert_monthly_data(store_id, fy, month, 6, salary)
         a2 = upsert_monthly_data(store_id, fy, month, 11, welfare)
         print(f"  {STORE_LABEL[store_id]}: 人件費=¥{salary:,} ({a1}) / 法定福利費=¥{welfare:,} ({a2})")
+
+    # PDFをサーバーの非公開ディレクトリにアップロード (爽夏さんがUriboで参照できるように)
+    if pdf_path is not None:
+        print("\n=== PDFサーバーアップロード ===")
+        upload_pdf_to_server(pdf_path, year, month)
 
 
 # ---- Comparison -----------------------------------------------------------
@@ -571,7 +604,7 @@ def main():
         print(json.dumps(all_results, ensure_ascii=False, indent=2))
 
     if args.apply:
-        apply_to_db(year, month, pdf_records, alias_map, args.pdf.name)
+        apply_to_db(year, month, pdf_records, alias_map, args.pdf.name, args.pdf)
 
 
 if __name__ == "__main__":

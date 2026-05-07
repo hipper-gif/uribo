@@ -94,6 +94,27 @@ export function Payroll() {
     })
   }
 
+  async function openPdf(y: number, m: number) {
+    const apiUrl = (import.meta.env.VITE_API_URL as string).replace('/api.php', '')
+    const token = import.meta.env.VITE_API_TOKEN as string
+    try {
+      const res = await fetch(`${apiUrl}/payroll_pdf.php?year=${y}&month=${m}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        alert(`PDF取得失敗: HTTP ${res.status} (まだサーバーに反映されていない可能性)`)
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      // 5秒後に解放
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (err) {
+      alert('PDF取得エラー: ' + (err as Error).message)
+    }
+  }
+
   const empMap = useMemo(() => {
     const m: Record<number, MnemeEmployee> = {}
     for (const s of staff) m[s.id] = s
@@ -381,10 +402,18 @@ export function Payroll() {
                                 <div style={{ color: '#999', fontSize: 12 }}>まだPDF反映されていません<br/><small>杉原さんがTKC入力後、verify_tkc_pdf.py --apply で反映されます</small></div>
                               )}
                               {r.tkc_pdf_filename && (
-                                <div style={{ fontSize: 10, color: '#aaa', marginTop: 8 }}>
-                                  反映ファイル: {r.tkc_pdf_filename}<br/>
-                                  反映日時: {r.tkc_verified_at?.slice(0, 16)}
-                                </div>
+                                <>
+                                  <div style={{ marginTop: 8 }}>
+                                    <button onClick={() => openPdf(r.year, r.month)}
+                                      style={{ padding: '4px 12px', background: '#fff', border: '1px solid #3a4ddb', color: '#3a4ddb', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+                                      📄 給与明細PDFを開く
+                                    </button>
+                                  </div>
+                                  <div style={{ fontSize: 10, color: '#aaa', marginTop: 6 }}>
+                                    反映ファイル: {r.tkc_pdf_filename}<br/>
+                                    反映日時: {r.tkc_verified_at?.slice(0, 16)}
+                                  </div>
+                                </>
                               )}
                             </div>
                             <div>
