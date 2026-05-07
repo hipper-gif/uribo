@@ -1,21 +1,26 @@
-"""TKC PX2 給与明細PDF と beauty_payroll_monthly を突合
+"""TKC PX2 給与明細PDF と beauty_payroll_monthly を突合 / DB反映
 
 杉原さんがTKCに入力後、生成された給与明細PDFをアップロードして実行する。
-スクリプト計算結果との差異を一覧表示し、爽夏さんの補正漏れ・伊藤梨音さんのような
-「実は明細では未支給」のケースを検知する。
+スクリプト計算結果との差異を一覧表示し、爽夏さんの補正漏れ等を検知する。
+
+--apply オプション: 突合後、PDFの値を beauty_payroll_monthly に反映 +
+店舗別の人件費合計・法定福利費を beauty_monthly_data に UPSERT (uribo月次入力)。
 
 使い方:
     python verify_tkc_pdf.py path/to/can202605.pdf
     python verify_tkc_pdf.py path/to/can202605.pdf --month 2026-04
-    python verify_tkc_pdf.py path/to/can202605.pdf --json  # JSON出力
+    python verify_tkc_pdf.py path/to/can202605.pdf --apply  # DBに反映
+    python verify_tkc_pdf.py path/to/can202605.pdf --json   # JSON出力
 
 PDFから抽出する項目:
-    TKCコード, 名前, 基本給, 役職手当, 指名報酬, 売上達成金, 皆勤手当,
-    立替金, 支給合計, 差引支給額
+    TKCコード, 名前, 基本給, 役職手当, 指名報酬, 売上達成金,
+    支給合計(gross_total), 差引支給額(net_payment),
+    社会保険料合計(social_insurance_total), 所得税, 住民税
 
-DBから引く項目: beauty_payroll_monthly の同等項目
-
-突合結果: 各項目で PDF=DB なら ✓、差異ありなら ✗ + 数値表示
+--apply 時のDB反映:
+    beauty_payroll_monthly: gross_total, net_payment, social_insurance_total,
+        income_tax, resident_tax, tkc_pdf_filename, tkc_verified_at, status='tkc_entered'
+    beauty_monthly_data: 店舗別合計を 人件費(item_id=6) / 法定福利費(item_id=11) に UPSERT
 """
 import argparse
 import json
@@ -24,6 +29,7 @@ import re
 import sys
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 import pdfplumber
@@ -87,7 +93,10 @@ def parse_payslip_pdf(pdf_path: Path) -> list[dict]:
             "perfect_attendance_amount": 0,
             "reimbursement": 0,
             "gross_total": 0,
-            "diff_payment": 0,
+            "net_payment": 0,
+            "social_insurance_total": 0,
+            "income_tax": 0,
+            "resident_tax": 0,
         }
 
         # 1. 基本給・役職手当: 「基本給(月給)/(時給)…特別手当」直後の支給行
@@ -127,7 +136,22 @@ def parse_payslip_pdf(pdf_path: Path) -> list[dict]:
                 cand = lines[i + 1] if i + 1 < len(lines) else ""
                 nums = extract_numbers(cand)
                 if nums:
-                    record["diff_payment"] = nums[-1]
+                    record["net_payment"] = nums[-1]
+                break
+
+        # 5. 社会保険料合計・所得税・住民税
+        # ラベル: 「健康保険 厚生年金 雇用保険 社会保険料合計 課税対象額 所 得 税 住 民 税 ...」
+        # 値: [健保, 厚年, 雇用, 社保合計, 課税対象額, 所得税, 住民税, ...]
+        for i, line in enumerate(lines):
+            if "健康保険" in line and "厚生年金" in line and "雇用保険" in line:
+                cand = lines[i + 1] if i + 1 < len(lines) else ""
+                nums = extract_numbers(cand)
+                if len(nums) >= 4:
+                    record["social_insurance_total"] = nums[3]
+                if len(nums) >= 6:
+                    record["income_tax"] = nums[5]
+                if len(nums) >= 7:
+                    record["resident_tax"] = nums[6]
                 break
 
         # 4. 立替金: 「貸付金返済 立替金 食事代」直後の行から2番目の値（位置依存・取れない場合あり）
@@ -187,6 +211,106 @@ def get_payroll_record(employee_id: int, year: int, month: int) -> dict | None:
     return rows[0] if rows else None
 
 
+def _api_send(method: str, path: str, body: dict) -> None:
+    url = f"{API_URL}/{path}"
+    data = json.dumps(body).encode()
+    headers = {"Authorization": f"Bearer {API_TOKEN}", "Content-Type": "application/json"}
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    urllib.request.urlopen(req).read()
+
+
+def fiscal_year_for(year: int, month: int) -> int:
+    return year if month >= 4 else year - 1
+
+
+def upsert_monthly_data(store_id: int, fiscal_year: int, month: int, item_id: int, amount: int) -> str:
+    qs = urllib.parse.urlencode({
+        "store_id": f"eq.{store_id}",
+        "fiscal_year": f"eq.{fiscal_year}",
+        "month": f"eq.{month}",
+        "data_type": "eq.実績",
+        "item_id": f"eq.{item_id}",
+    })
+    existing = _api_get(f"beauty_monthly_data?{qs}")
+    body: dict = {"amount": str(amount)}
+    if existing:
+        _api_send("PATCH", f"beauty_monthly_data?{qs}", body)
+        return "updated"
+    body.update({
+        "store_id": store_id,
+        "fiscal_year": fiscal_year,
+        "month": month,
+        "data_type": "実績",
+        "item_id": item_id,
+    })
+    _api_send("POST", "beauty_monthly_data", body)
+    return "inserted"
+
+
+def apply_to_db(year: int, month: int, pdf_records: list[dict],
+                alias_map: dict[str, dict], pdf_filename: str) -> None:
+    """PDFの値を beauty_payroll_monthly + beauty_monthly_data に反映"""
+    print("\n=== DB反映 (--apply) ===")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # store_code → store_id (1=寝屋川, 2=守口)
+    STORE_MAP = {"neyagawa": 1, "moriguchi": 2}
+    by_store: dict[int, dict] = {1: {"salary": 0, "welfare": 0}, 2: {"salary": 0, "welfare": 0}}
+
+    for pdf in pdf_records:
+        alias = alias_map.get(pdf["tkc_code"])
+        if not alias:
+            print(f"  [skip] tkc_code={pdf['tkc_code']} ({pdf['name']}): 未登録")
+            continue
+        emp_id = int(alias["employee_id"])
+        store_id = STORE_MAP.get(alias["store_code"], 0)
+
+        body = {
+            "gross_total": pdf.get("gross_total", 0),
+            "net_payment": pdf.get("net_payment", 0),
+            "social_insurance_total": pdf.get("social_insurance_total", 0),
+            "income_tax": pdf.get("income_tax", 0),
+            "resident_tax": pdf.get("resident_tax", 0),
+            "tkc_pdf_filename": pdf_filename,
+            "tkc_verified_at": now_str,
+            "status": "tkc_entered",
+        }
+        qs = urllib.parse.urlencode({
+            "employee_id": f"eq.{emp_id}",
+            "year": f"eq.{year}",
+            "month": f"eq.{month}",
+        })
+        try:
+            _api_send("PATCH", f"beauty_payroll_monthly?{qs}", body)
+            print(
+                f"  ✓ {pdf['name']:<14} gross=¥{pdf['gross_total']:>9,} "
+                f"net=¥{pdf['net_payment']:>9,} 社保=¥{pdf['social_insurance_total']:>7,} "
+                f"所得税=¥{pdf['income_tax']:>5,} 住民税=¥{pdf['resident_tax']:>5,}"
+            )
+        except Exception as e:
+            print(f"  ✗ {pdf['name']}: PATCH失敗 {e}")
+            continue
+
+        # 店舗別集計
+        if store_id in by_store:
+            by_store[store_id]["salary"] += pdf.get("gross_total", 0)
+            by_store[store_id]["welfare"] += pdf.get("social_insurance_total", 0)
+
+    # 店舗別合計を beauty_monthly_data へ UPSERT
+    print("\n=== 月次入力反映 (beauty_monthly_data) ===")
+    print("    [前提] 法定福利費は労使折半の概算で社会保険料合計×2 とする")
+    fy = fiscal_year_for(year, month)
+    STORE_LABEL = {1: "寝屋川店", 2: "守口店"}
+    for store_id, vals in by_store.items():
+        salary = vals["salary"]
+        welfare = vals["welfare"] * 2  # 労使折半概算
+        if salary == 0 and welfare == 0:
+            continue
+        a1 = upsert_monthly_data(store_id, fy, month, 6, salary)
+        a2 = upsert_monthly_data(store_id, fy, month, 11, welfare)
+        print(f"  {STORE_LABEL[store_id]}: 人件費=¥{salary:,} ({a1}) / 法定福利費=¥{welfare:,} ({a2})")
+
+
 # ---- Comparison -----------------------------------------------------------
 
 
@@ -223,6 +347,8 @@ def main():
     parser.add_argument("pdf", type=Path, help="給与明細PDFパス")
     parser.add_argument("--month", help="対象月 YYYY-MM（省略時はファイル名から推定 or 当月）")
     parser.add_argument("--json", action="store_true", help="JSON形式で出力")
+    parser.add_argument("--apply", action="store_true",
+        help="突合後、PDF値を beauty_payroll_monthly に反映 + 店舗別合計を beauty_monthly_data (人件費/法定福利費) に投入")
     args = parser.parse_args()
 
     if not args.pdf.exists():
@@ -312,6 +438,9 @@ def main():
     if args.json:
         print("\n--- JSON ---")
         print(json.dumps(all_results, ensure_ascii=False, indent=2))
+
+    if args.apply:
+        apply_to_db(year, month, pdf_records, alias_map, args.pdf.name)
 
 
 if __name__ == "__main__":
