@@ -169,16 +169,16 @@ INSERT INTO beauty_position_allowance (position_name, amount, effective_from) VA
 
 -- サロンボードマッピング（10名・4月実機検証済）
 INSERT INTO salonboard_staff_alias (store_code, salonboard_name, employee_id) VALUES
-('neyagawa',  'Yuuna .M',  68),
-('neyagawa',  'Nene .M',   73),
-('neyagawa',  'Maria .T',  74),
-('neyagawa',  'Utaha .H',  76),
-('neyagawa',  'Akari .K',  75),
-('moriguchi', 'Kotoe .K',  77),
-('moriguchi', 'Maho .W',   78),
-('moriguchi', 'Rionn .I',  82),
-('moriguchi', 'Yuuna .K', 104),
-('moriguchi', 'Mei .K',   106);
+('neyagawa',  'Yuuna　.M',  68),
+('neyagawa',  'Nene　.M',   73),
+('neyagawa',  'Maria　.T',  74),
+('neyagawa',  'Utaha　.H',  76),
+('neyagawa',  'Akari　.K',  75),
+('moriguchi', 'Kotoe　.K',  77),
+('moriguchi', 'Maho　.W',   78),
+('moriguchi', 'Rionn　.I',  82),
+('moriguchi', 'Yuuna　.K', 104),
+('moriguchi', 'Mei　.K',   106);
 
 -- スタッフ別ランク履歴（10名・4月明細から確定）
 INSERT INTO beauty_employee_grade (employee_id, employment_type, grade, base_salary_override, effective_from, notes) VALUES
