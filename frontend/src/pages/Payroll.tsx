@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPatch } from '../lib/api'
 import { fetchBeautyStaff, type MnemeEmployee } from '../lib/mnemeApi'
 
@@ -29,6 +29,13 @@ interface PayrollRow {
   perfect_attendance: number
   perfect_attendance_accrual: number
   total_amount: number
+  gross_total: number
+  net_payment: number
+  social_insurance_total: number
+  income_tax: number
+  resident_tax: number
+  tkc_pdf_filename: string | null
+  tkc_verified_at: string | null
   status: 'draft' | 'confirmed' | 'tkc_entered'
   notes: string | null
 }
@@ -76,6 +83,16 @@ export function Payroll() {
   const [editing, setEditing] = useState<number | null>(null)
   const [draft, setDraft] = useState<Partial<PayrollRow>>({})
   const [error, setError] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+
+  function toggleExpand(id: number) {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const empMap = useMemo(() => {
     const m: Record<number, MnemeEmployee> = {}
@@ -245,7 +262,8 @@ export function Payroll() {
                   const isEdit = editing === r.id
                   const e = empMap[r.employee_id]
                   return (
-                    <tr key={r.id} style={{ borderTop: '1px solid #eee' }}>
+                    <Fragment key={r.id}>
+                    <tr style={{ borderTop: '1px solid #eee' }}>
                       <td style={{ padding: '8px 6px' }}>{STORE_LABEL[r.store_id] ?? r.store_id}</td>
                       <td style={{ padding: '8px 6px' }}>{e?.name ?? `(emp=${r.employee_id})`}</td>
                       <td style={{ padding: '8px 6px', textAlign: 'right' }}>{fmt(r.sales_total)}</td>
@@ -331,6 +349,7 @@ export function Payroll() {
                           </>
                         ) : (
                           <>
+                            <button onClick={() => toggleExpand(r.id)} style={{ marginRight: 4, padding: '3px 8px', background: '#fff', border: '1px solid #aaa', borderRadius: 4, cursor: 'pointer' }}>{expanded.has(r.id) ? '閉じる' : '明細'}</button>
                             <button onClick={() => startEdit(r)} style={{ marginRight: 4, padding: '3px 8px', background: '#fff', border: '1px solid #aaa', borderRadius: 4, cursor: 'pointer' }}>編集</button>
                             {r.status === 'draft' && (
                               <button onClick={() => transition(r, 'confirmed')} style={{ marginRight: 4, padding: '3px 8px', background: '#3a4ddb', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>確定</button>
@@ -342,6 +361,51 @@ export function Payroll() {
                         )}
                       </td>
                     </tr>
+                    {expanded.has(r.id) && (
+                      <tr>
+                        <td colSpan={16} style={{ background: '#fafaf6', padding: '12px 20px', borderTop: '1px dashed #ddd' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px 24px' }}>
+                            <div>
+                              <h4 style={{ margin: '0 0 8px', fontSize: 12, color: '#666', borderBottom: '1px solid #ddd', paddingBottom: 4 }}>TKC明細（PDF反映値）</h4>
+                              {r.tkc_verified_at ? (
+                                <table style={{ fontSize: 12, width: '100%' }}>
+                                  <tbody>
+                                    <tr><td style={{ color: '#777' }}>支給合計</td><td style={{ textAlign: 'right', fontWeight: 600 }}>¥{r.gross_total.toLocaleString()}</td></tr>
+                                    <tr><td style={{ color: '#777' }}>社会保険料合計</td><td style={{ textAlign: 'right' }}>¥{r.social_insurance_total.toLocaleString()}</td></tr>
+                                    <tr><td style={{ color: '#777' }}>所得税</td><td style={{ textAlign: 'right' }}>¥{r.income_tax.toLocaleString()}</td></tr>
+                                    <tr><td style={{ color: '#777' }}>住民税</td><td style={{ textAlign: 'right' }}>¥{r.resident_tax.toLocaleString()}</td></tr>
+                                    <tr><td style={{ color: '#777', borderTop: '1px solid #ddd', paddingTop: 4 }}>差引支給額</td><td style={{ textAlign: 'right', fontWeight: 700, color: '#0a8', borderTop: '1px solid #ddd', paddingTop: 4 }}>¥{r.net_payment.toLocaleString()}</td></tr>
+                                  </tbody>
+                                </table>
+                              ) : (
+                                <div style={{ color: '#999', fontSize: 12 }}>まだPDF反映されていません<br/><small>杉原さんがTKC入力後、verify_tkc_pdf.py --apply で反映されます</small></div>
+                              )}
+                              {r.tkc_pdf_filename && (
+                                <div style={{ fontSize: 10, color: '#aaa', marginTop: 8 }}>
+                                  反映ファイル: {r.tkc_pdf_filename}<br/>
+                                  反映日時: {r.tkc_verified_at?.slice(0, 16)}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <h4 style={{ margin: '0 0 8px', fontSize: 12, color: '#666', borderBottom: '1px solid #ddd', paddingBottom: 4 }}>サロンボード参考値</h4>
+                              <table style={{ fontSize: 12, width: '100%' }}>
+                                <tbody>
+                                  <tr><td style={{ color: '#777' }}>総売上</td><td style={{ textAlign: 'right' }}>¥{r.sales_total.toLocaleString()}</td></tr>
+                                  <tr><td style={{ color: '#777' }}>　施術</td><td style={{ textAlign: 'right', color: '#888' }}>¥{r.sales_treatment.toLocaleString()}</td></tr>
+                                  <tr><td style={{ color: '#777' }}>　店販</td><td style={{ textAlign: 'right', color: '#888' }}>¥{r.sales_product.toLocaleString()}</td></tr>
+                                  <tr><td style={{ color: '#777' }}>　オプション</td><td style={{ textAlign: 'right', color: '#888' }}>¥{r.sales_option.toLocaleString()}</td></tr>
+                                  <tr><td style={{ color: '#777' }}>客数</td><td style={{ textAlign: 'right' }}>{r.customers_total} (新{r.customers_new} / 再{r.customers_repeat})</td></tr>
+                                  <tr><td style={{ color: '#777' }}>指名売上</td><td style={{ textAlign: 'right' }}>¥{r.nomination_sales.toLocaleString()}</td></tr>
+                                  <tr><td style={{ color: '#777' }}>サロンボード指名件数</td><td style={{ textAlign: 'right', color: '#888' }}>{r.nomination_count_scraped}件 (実績: {r.nomination_count_actual}件)</td></tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   )
                 })}
               </tbody>
