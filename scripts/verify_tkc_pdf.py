@@ -64,7 +64,134 @@ def extract_numbers(line: str) -> list[int]:
 
 
 def parse_payslip_pdf(pdf_path: Path) -> list[dict]:
-    """TKC PX2 形式の給与明細PDFをパース。各人を1辞書として返す。"""
+    """TKC PX2 形式の給与明細PDFをパース (座標ベース)。各人を1辞書として返す。"""
+    return _parse_by_coords(pdf_path)
+
+
+# X座標範囲(各セクションのラベル位置から決定)
+_X_RANGES = {
+    "col1": (50, 90),    # 基本給 / 指名報酬 / 健康保険
+    "col2": (90, 145),   # 役職手当 / 売上達成金 / 厚生年金
+    "col3": (145, 185),  # 職務手当 / 皆勤手当 / 雇用保険
+    "col4": (185, 230),  # 技術手当 / 時間外手当 / 社会保険料合計
+    "col5": (230, 280),  # 介護報酬 / 課税対象額
+    "col6": (280, 325),  # 特定処遇改善 / 所得税
+    "col7": (325, 380),  # 処遇改善加算 / 住民税
+    "col8": (380, 420),  # ﾍﾞｰｽｱｯﾌﾟ加算 / 課税支給額 / 貸付金返済
+    "col9": (420, 470),  # 固定残業手当 / 立替金
+    "col10": (470, 510), # 特別手当 / 食事代
+    "col_total": (515, 560),  # 支給合計 / 差引支給額
+}
+
+
+def _in_range(x: float, key: str) -> bool:
+    lo, hi = _X_RANGES[key]
+    return lo <= x < hi
+
+
+def _parse_by_coords(pdf_path: Path) -> list[dict]:
+    with pdfplumber.open(str(pdf_path)) as pdf:
+        all_words = []
+        for page in pdf.pages:
+            all_words.extend(page.extract_words(use_text_flow=False))
+
+    # ブロック分割: 「002」アンカー + 「(数字6桁)：(名前)」パターン
+    block_starts = []
+    for i, w in enumerate(all_words):
+        if w["text"] != "002":
+            continue
+        for j in range(i, min(i + 5, len(all_words))):
+            m = re.match(r"^(\d{6})[:：](.+)?", all_words[j]["text"])
+            if m:
+                name_part = (m.group(2) or "").strip()
+                # 次の word が名前続きの可能性
+                if j + 1 < len(all_words):
+                    nxt = all_words[j + 1]["text"]
+                    if nxt not in ("殿", "税額表", "扶養等"):
+                        name_part = (name_part + " " + nxt).strip()
+                name_part = name_part.replace("殿", "").strip()
+                block_starts.append((i, m.group(1), name_part))
+                break
+
+    def find_y(words, label: str) -> float | None:
+        for w in words:
+            if w["text"] == label:
+                return w["top"]
+        return None
+
+    def values_at(words, label_y: float | None, dy_max: float = 20) -> list[tuple[float, int]]:
+        if label_y is None:
+            return []
+        out = []
+        for w in words:
+            if label_y < w["top"] < label_y + dy_max:
+                if re.match(r"^[-]?[\d,]+$", w["text"]):
+                    x = (w["x0"] + w["x1"]) / 2
+                    out.append((x, parse_amount(w["text"])))
+        return out
+
+    results = []
+    for k, (start_idx, tkc, name) in enumerate(block_starts):
+        end_idx = block_starts[k + 1][0] if k + 1 < len(block_starts) else len(all_words)
+        bw = all_words[start_idx:end_idx]
+
+        rec = {
+            "tkc_code": tkc, "name": name,
+            "base_salary": 0, "position_allowance": 0,
+            "nomination_allowance": 0, "commission_amount": 0,
+            "perfect_attendance_amount": 0,
+            "gross_total": 0, "net_payment": 0,
+            "social_insurance_total": 0, "income_tax": 0, "resident_tax": 0,
+            "reimbursement": 0,
+        }
+
+        # 1. 基本給・役職手当
+        # 注: TKC PDFテンプレートでは役職手当の値は col3 位置に表示される
+        # (ラベルは col2 だが、値は col3 にずれて表示される仕様)
+        base_y = find_y(bw, "基本給(月給)") or find_y(bw, "基本給(時給)")
+        for x, v in values_at(bw, base_y):
+            if _in_range(x, "col1"):
+                rec["base_salary"] = v
+            elif _in_range(x, "col3"):
+                rec["position_allowance"] = v
+
+        # 2. 支給セクション (指名報酬・売上達成金・皆勤手当・支給合計)
+        nom_y = find_y(bw, "指名報酬")
+        for x, v in values_at(bw, nom_y):
+            if _in_range(x, "col1"):
+                rec["nomination_allowance"] = v
+            elif _in_range(x, "col2"):
+                rec["commission_amount"] = v
+            elif _in_range(x, "col3"):
+                rec["perfect_attendance_amount"] = v
+            elif _in_range(x, "col_total"):
+                rec["gross_total"] = v
+
+        # 3. 控除セクション (社会保険料合計・所得税・住民税・立替金)
+        # 「健康保険」ラベル行の下に「控」記号行を挟んで値行が来るため dy_max=30
+        health_y = find_y(bw, "健康保険")
+        for x, v in values_at(bw, health_y, dy_max=30):
+            if _in_range(x, "col4"):
+                rec["social_insurance_total"] = v
+            elif _in_range(x, "col6"):
+                rec["income_tax"] = v
+            elif _in_range(x, "col7"):
+                rec["resident_tax"] = v
+            elif _in_range(x, "col9"):
+                rec["reimbursement"] = v
+
+        # 4. 差引支給額
+        net_y = find_y(bw, "差引支給額")
+        for x, v in values_at(bw, net_y):
+            if _in_range(x, "col_total"):
+                rec["net_payment"] = v
+
+        results.append(rec)
+    return results
+
+
+def _parse_text_legacy(pdf_path: Path) -> list[dict]:
+    """旧テキストベース実装(参照用、未使用)。"""
     text_all = ""
     with pdfplumber.open(str(pdf_path)) as pdf:
         for page in pdf.pages:
