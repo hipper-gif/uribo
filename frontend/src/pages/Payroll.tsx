@@ -72,12 +72,33 @@ function calcTotal(r: Partial<PayrollRow>): number {
   )
 }
 
+interface CommissionRow {
+  id: number
+  sales_threshold: number
+  commission_amount: number
+  effective_from: string
+  effective_to: string | null
+}
+
+function commissionFor(sales: number, table: CommissionRow[]): number {
+  // sales_threshold <= sales の中で最大の commission_amount (階段関数)
+  let best = 0
+  for (const r of table) {
+    if (sales >= Number(r.sales_threshold)) {
+      const amt = Number(r.commission_amount)
+      if (amt > best) best = amt
+    }
+  }
+  return best
+}
+
 export function Payroll() {
   const init = prevMonth()
   const [year, setYear] = useState(init.year)
   const [month, setMonth] = useState(init.month)
   const [rows, setRows] = useState<PayrollRow[]>([])
   const [staff, setStaff] = useState<MnemeEmployee[]>([])
+  const [commissionTable, setCommissionTable] = useState<CommissionRow[]>([])
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState<number | null>(null)
   const [draft, setDraft] = useState<Partial<PayrollRow>>({})
@@ -163,17 +184,25 @@ export function Payroll() {
   async function load() {
     setLoading(true)
     setError(null)
-    const [{ data, error: e1 }, st] = await Promise.all([
+    const monthEnd = `${year}-${String(month).padStart(2, '0')}-31`
+    const [{ data, error: e1 }, st, ct] = await Promise.all([
       apiGet<PayrollRow[]>('beauty_payroll_monthly', {
         year: `eq.${year}`,
         month: `eq.${month}`,
         order: 'store_id.asc,total_amount.desc',
       }),
       fetchBeautyStaff(),
+      apiGet<CommissionRow[]>('beauty_commission_table', {
+        effective_from: `lte.${monthEnd}`,
+        order: 'sales_threshold.asc',
+      }),
     ])
     if (e1) setError(e1.message)
     setRows(data ?? [])
     setStaff(st)
+    // 月時点で有効な行のみ
+    const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+    setCommissionTable((ct.data ?? []).filter(r => r.effective_to === null || r.effective_to >= monthStart))
     setLoading(false)
   }
 
@@ -185,6 +214,7 @@ export function Payroll() {
   function startEdit(r: PayrollRow) {
     setEditing(r.id)
     setDraft({
+      sales_total: r.sales_total,
       nomination_count_actual: r.nomination_count_actual,
       paid_leave_days: r.paid_leave_days,
       overtime_hours: r.overtime_hours,
@@ -202,6 +232,10 @@ export function Payroll() {
 
   async function saveEdit(orig: PayrollRow) {
     const merged: Partial<PayrollRow> = { ...orig, ...draft }
+    const sales = Number(draft.sales_total ?? orig.sales_total) || 0
+    merged.sales_total = sales
+    // 売上→歩合(自動再計算)
+    merged.commission_amount = commissionFor(sales, commissionTable)
     const nomActual = Number(draft.nomination_count_actual ?? orig.nomination_count_actual) || 0
     merged.nomination_count_actual = nomActual
     merged.nomination_allowance = nomActual * 500
@@ -209,6 +243,8 @@ export function Payroll() {
     merged.total_amount = calcTotal(merged)
 
     const patch: Record<string, unknown> = {
+      sales_total: merged.sales_total,
+      commission_amount: merged.commission_amount,
       nomination_count_actual: merged.nomination_count_actual,
       nomination_allowance: merged.nomination_allowance,
       paid_leave_days: merged.paid_leave_days ?? 0,
@@ -418,8 +454,16 @@ export function Payroll() {
                       <tr key={r.id}>
                         <td>{STORE_LABEL[r.store_id]}</td>
                         <td><b>{e?.name ?? `(emp=${r.employee_id})`}</b></td>
-                        <td className="right">{fmtYen(r.sales_total)}</td>
-                        <td className="right">{fmtYen(r.commission_amount)}</td>
+                        <td className="right">
+                          {isEdit ? (
+                            <input className="payroll-table-input" type="number" min="0" step="100"
+                              value={String(draft.sales_total ?? r.sales_total)}
+                              onChange={ev => setDraft(d => ({ ...d, sales_total: Number(ev.target.value) || 0 }))}
+                              style={{ width: 100 }}
+                            />
+                          ) : fmtYen(r.sales_total)}
+                        </td>
+                        <td className="right">{fmtYen(isEdit ? commissionFor(Number(draft.sales_total ?? r.sales_total) || 0, commissionTable) : r.commission_amount)}</td>
                         <td className="right">
                           {isEdit ? (
                             <input className="payroll-table-input" type="number" min="0"
@@ -449,7 +493,12 @@ export function Payroll() {
                             />
                           ) : fmtYen(r.reimbursement)}
                         </td>
-                        <td className="right strong">{fmtYen(isEdit ? calcTotal({ ...r, ...draft, nomination_allowance: (Number(draft.nomination_count_actual ?? r.nomination_count_actual) || 0) * 500 }) : r.total_amount)}</td>
+                        <td className="right strong">{fmtYen(isEdit ? calcTotal({
+                          ...r, ...draft,
+                          sales_total: Number(draft.sales_total ?? r.sales_total) || 0,
+                          commission_amount: commissionFor(Number(draft.sales_total ?? r.sales_total) || 0, commissionTable),
+                          nomination_allowance: (Number(draft.nomination_count_actual ?? r.nomination_count_actual) || 0) * 500,
+                        }) : r.total_amount)}</td>
                         <td>
                           <span className={`payroll-status-badge payroll-status-${status}`}>
                             {STATUS_LABEL[status]}
@@ -485,10 +534,14 @@ export function Payroll() {
               const isEdit = editing === r.id
               const e = empMap[r.employee_id]
               const status = r.status
+              const editedSales = Number(draft.sales_total ?? r.sales_total) || 0
+              const editedCommission = isEdit ? commissionFor(editedSales, commissionTable) : r.commission_amount
               const computedTotal = isEdit
                 ? calcTotal({
                     ...r,
                     ...draft,
+                    sales_total: editedSales,
+                    commission_amount: editedCommission,
                     nomination_allowance: (Number(draft.nomination_count_actual ?? r.nomination_count_actual) || 0) * 500,
                   })
                 : r.total_amount
@@ -506,11 +559,19 @@ export function Payroll() {
 
                   <div className="payroll-row">
                     <span className="payroll-row-label">売上</span>
-                    <span className="payroll-row-value">{fmtYen(r.sales_total)}</span>
+                    <span className="payroll-row-value">
+                      {isEdit ? (
+                        <input className="payroll-input" type="number" min="0" step="100"
+                          value={String(draft.sales_total ?? r.sales_total)}
+                          onChange={ev => setDraft(d => ({ ...d, sales_total: Number(ev.target.value) || 0 }))}
+                          style={{ width: 110 }}
+                        />
+                      ) : fmtYen(r.sales_total)}
+                    </span>
                   </div>
                   <div className="payroll-row">
                     <span className="payroll-row-label">歩合(達成金)</span>
-                    <span className="payroll-row-value">{fmtYen(r.commission_amount)}</span>
+                    <span className="payroll-row-value">{fmtYen(editedCommission)}{isEdit && Number(draft.sales_total ?? r.sales_total) !== r.sales_total && <span className="payroll-row-sub">自動再計算</span>}</span>
                   </div>
                   <div className="payroll-row">
                     <span className="payroll-row-label">指名件数</span>
