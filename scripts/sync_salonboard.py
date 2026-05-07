@@ -698,7 +698,7 @@ def main():
                 push_staff_payroll(store, month, data["staff"], dry_run=True)
         else:
             if not args.only_staff:
-                push_to_uribo(store, month, data)
+                push_to_uribo(store, month, data["sales"])
             if with_staff and data["staff"]:
                 push_staff_payroll(store, month, data["staff"], dry_run=False)
 
