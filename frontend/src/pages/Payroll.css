@@ -78,6 +78,108 @@
   color: #222;
 }
 
+.payroll-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 8px;
+}
+.payroll-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.payroll-filter-label {
+  font-size: 11px;
+  color: #888;
+  margin-right: 4px;
+}
+.payroll-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 16px;
+  border: 1px solid #ccc;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  min-height: 28px;
+}
+.payroll-chip.active {
+  background: #3a4ddb;
+  border-color: #3a4ddb;
+  color: #fff;
+}
+.payroll-spacer { flex: 1; }
+.payroll-view-toggle {
+  display: inline-flex;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.payroll-view-toggle button {
+  padding: 6px 12px;
+  background: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  min-height: 32px;
+}
+.payroll-view-toggle button.active {
+  background: #3a4ddb;
+  color: #fff;
+}
+
+.payroll-table-wrap {
+  overflow-x: auto;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.payroll-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.payroll-table thead th {
+  background: #f5efe0;
+  text-align: left;
+  padding: 10px 8px;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.payroll-table th.right, .payroll-table td.right { text-align: right; }
+.payroll-table tbody tr { border-top: 1px solid #eee; }
+.payroll-table tbody tr:hover { background: #fafaf6; }
+.payroll-table td { padding: 8px; }
+.payroll-table .strong { font-weight: 700; color: #3a4ddb; }
+.payroll-table-input {
+  width: 80px;
+  padding: 4px 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  text-align: right;
+  font-size: 13px;
+}
+.payroll-table-actions { white-space: nowrap; }
+.payroll-table-actions button {
+  margin-right: 4px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .payroll-cards {
   display: grid;
   gap: 12px;

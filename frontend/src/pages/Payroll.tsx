@@ -83,6 +83,17 @@ export function Payroll() {
   const [draft, setDraft] = useState<Partial<PayrollRow>>({})
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
+    const saved = localStorage.getItem('payroll_view_mode')
+    return saved === 'table' ? 'table' : 'card'
+  })
+  const [storeFilter, setStoreFilter] = useState<'all' | 1 | 2>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | PayrollRow['status']>('all')
+
+  function changeView(m: 'card' | 'table') {
+    setViewMode(m)
+    localStorage.setItem('payroll_view_mode', m)
+  }
 
   const empMap = useMemo(() => {
     const m: Record<number, MnemeEmployee> = {}
@@ -204,8 +215,16 @@ export function Payroll() {
     monthOptions.push({ y: d.getFullYear(), m: d.getMonth() + 1 })
   }
 
-  const totalSales = rows.reduce((s, r) => s + (r.sales_total || 0), 0)
-  const totalPay = rows.reduce((s, r) => s + (r.total_amount || 0), 0)
+  const filteredRows = useMemo(() => {
+    return rows.filter(r => {
+      if (storeFilter !== 'all' && r.store_id !== storeFilter) return false
+      if (statusFilter !== 'all' && r.status !== statusFilter) return false
+      return true
+    })
+  }, [rows, storeFilter, statusFilter])
+
+  const totalSales = filteredRows.reduce((s, r) => s + (r.sales_total || 0), 0)
+  const totalPay = filteredRows.reduce((s, r) => s + (r.total_amount || 0), 0)
 
   return (
     <div className="payroll-page">
@@ -234,24 +253,166 @@ export function Payroll() {
       {error && <div className="payroll-error">{error}</div>}
       {loading && <div>読み込み中...</div>}
 
-      {!loading && rows.length === 0 && (
-        <div className="payroll-empty">
-          {year}年{month}月分のデータはまだ投入されていません。
-          <code>python sync_salonboard.py --with-staff --month {year}-{String(month).padStart(2, '0')}</code>
-          を実行してください。
-        </div>
-      )}
+      {!loading && rows.length === 0 && (() => {
+        const today = new Date()
+        const executableFrom = new Date(year, month, 1) // y年m月の翌月1日
+        const isExecutable = today >= executableFrom
+        const cmd = `cd C:\\Users\\nikon\\projects\\uribo\\scripts; python sync_salonboard.py --with-staff --month ${year}-${String(month).padStart(2, '0')}`
+        async function runSync() {
+          try {
+            await navigator.clipboard.writeText(cmd)
+            alert('実行コマンドをクリップボードにコピーしました。\n\n手順:\n1. PowerShellを開く\n2. 貼り付け (Ctrl+V) → Enter\n3. CAPTCHAが出たら解いてログイン\n4. 完了後、この画面の「更新」ボタンをクリック')
+          } catch {
+            window.prompt('以下をコピーしてPowerShellで実行してください', cmd)
+          }
+        }
+        return (
+          <div className="payroll-empty">
+            <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>{year}年{month}月分のデータはまだ投入されていません</h3>
+            {isExecutable ? (
+              <>
+                <button className="payroll-btn-primary" onClick={runSync} style={{ fontSize: 15, padding: '12px 24px' }}>
+                  📥 サロンボードから取得して投入
+                </button>
+                <p style={{ marginTop: 16, fontSize: 12, color: '#888', textAlign: 'left', lineHeight: 1.6 }}>
+                  ※ ボタンを押すと実行コマンドがクリップボードにコピーされます。<br/>
+                  PowerShellに貼り付けて実行 → サロンボードログイン (必要ならCAPTCHA手動解決) → 完了後この画面を「更新」してください。
+                </p>
+              </>
+            ) : (
+              <p style={{ color: '#888' }}>
+                <b>{executableFrom.getFullYear()}年{executableFrom.getMonth() + 1}月{executableFrom.getDate()}日</b> 以降に投入可能になります<br/>
+                <small style={{ fontSize: 11 }}>（{month}月の売上データが月末確定後にしか取得できないため）</small>
+              </p>
+            )}
+          </div>
+        )
+      })()}
 
       {!loading && rows.length > 0 && (
         <>
           <div className="payroll-summary">
-            <span>対象 <b>{rows.length}</b>名</span>
+            <span>対象 <b>{filteredRows.length}</b>名{filteredRows.length !== rows.length ? `(全${rows.length}名中)` : ''}</span>
             <span>売上合計 <b>{fmtYen(totalSales)}</b></span>
             <span>支給合計 <b>{fmtYen(totalPay)}</b></span>
           </div>
 
-          <div className="payroll-cards">
-            {rows.map(r => {
+          <div className="payroll-toolbar">
+            <div className="payroll-filter-group">
+              <span className="payroll-filter-label">店舗</span>
+              <button className={`payroll-chip ${storeFilter === 'all' ? 'active' : ''}`} onClick={() => setStoreFilter('all')}>全店</button>
+              <button className={`payroll-chip ${storeFilter === 1 ? 'active' : ''}`} onClick={() => setStoreFilter(1)}>寝屋川</button>
+              <button className={`payroll-chip ${storeFilter === 2 ? 'active' : ''}`} onClick={() => setStoreFilter(2)}>守口</button>
+            </div>
+            <div className="payroll-filter-group">
+              <span className="payroll-filter-label">状態</span>
+              <button className={`payroll-chip ${statusFilter === 'all' ? 'active' : ''}`} onClick={() => setStatusFilter('all')}>全て</button>
+              <button className={`payroll-chip ${statusFilter === 'draft' ? 'active' : ''}`} onClick={() => setStatusFilter('draft')}>草稿</button>
+              <button className={`payroll-chip ${statusFilter === 'confirmed' ? 'active' : ''}`} onClick={() => setStatusFilter('confirmed')}>確定済</button>
+              <button className={`payroll-chip ${statusFilter === 'tkc_entered' ? 'active' : ''}`} onClick={() => setStatusFilter('tkc_entered')}>TKC入力済</button>
+            </div>
+            <div className="payroll-spacer"></div>
+            <div className="payroll-view-toggle">
+              <button className={viewMode === 'card' ? 'active' : ''} onClick={() => changeView('card')}>📇 カード</button>
+              <button className={viewMode === 'table' ? 'active' : ''} onClick={() => changeView('table')}>📋 一覧</button>
+            </div>
+          </div>
+
+          {filteredRows.length === 0 ? (
+            <div className="payroll-empty">フィルタ条件に該当するスタッフがいません</div>
+          ) : viewMode === 'table' ? (
+            <div className="payroll-table-wrap">
+              <table className="payroll-table">
+                <thead>
+                  <tr>
+                    <th>店</th>
+                    <th>スタッフ</th>
+                    <th className="right">売上</th>
+                    <th className="right">歩合</th>
+                    <th className="right">指名</th>
+                    <th className="right">指名手当</th>
+                    <th className="right">基本給</th>
+                    <th className="right">役職</th>
+                    <th className="right">交通費</th>
+                    <th className="right">立替</th>
+                    <th className="right">合計</th>
+                    <th>状態</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.map(r => {
+                    const isEdit = editing === r.id
+                    const e = empMap[r.employee_id]
+                    const status = r.status
+                    return (
+                      <tr key={r.id}>
+                        <td>{STORE_LABEL[r.store_id]}</td>
+                        <td><b>{e?.name ?? `(emp=${r.employee_id})`}</b></td>
+                        <td className="right">{fmtYen(r.sales_total)}</td>
+                        <td className="right">{fmtYen(r.commission_amount)}</td>
+                        <td className="right">
+                          {isEdit ? (
+                            <input className="payroll-table-input" type="number" min="0"
+                              value={String(draft.nomination_count_actual ?? r.nomination_count_actual)}
+                              onChange={ev => setDraft(d => ({ ...d, nomination_count_actual: Number(ev.target.value) || 0 }))}
+                            />
+                          ) : (
+                            <>{r.nomination_count_actual}件</>
+                          )}
+                        </td>
+                        <td className="right">{fmtYen(isEdit ? (Number(draft.nomination_count_actual ?? r.nomination_count_actual) || 0) * 500 : r.nomination_allowance)}</td>
+                        <td className="right">{fmtYen(r.base_salary)}</td>
+                        <td className="right">{fmtYen(r.position_allowance)}</td>
+                        <td className="right">
+                          {isEdit ? (
+                            <input className="payroll-table-input" type="number" min="0"
+                              value={String(draft.transit_amount ?? r.transit_amount)}
+                              onChange={ev => setDraft(d => ({ ...d, transit_amount: Number(ev.target.value) || 0 }))}
+                            />
+                          ) : fmtYen(r.transit_amount)}
+                        </td>
+                        <td className="right">
+                          {isEdit ? (
+                            <input className="payroll-table-input" type="number" min="0"
+                              value={String(draft.reimbursement ?? r.reimbursement)}
+                              onChange={ev => setDraft(d => ({ ...d, reimbursement: Number(ev.target.value) || 0 }))}
+                            />
+                          ) : fmtYen(r.reimbursement)}
+                        </td>
+                        <td className="right strong">{fmtYen(isEdit ? calcTotal({ ...r, ...draft, nomination_allowance: (Number(draft.nomination_count_actual ?? r.nomination_count_actual) || 0) * 500 }) : r.total_amount)}</td>
+                        <td>
+                          <span className={`payroll-status-badge payroll-status-${status}`}>
+                            {STATUS_LABEL[status]}
+                          </span>
+                        </td>
+                        <td className="payroll-table-actions">
+                          {isEdit ? (
+                            <>
+                              <button className="payroll-btn-primary" onClick={() => saveEdit(r)} style={{ minHeight: 30, padding: '4px 10px' }}>保存</button>
+                              <button className="payroll-btn-secondary" onClick={cancelEdit} style={{ minHeight: 30, padding: '4px 10px' }}>取消</button>
+                            </>
+                          ) : (
+                            <>
+                              <button className="payroll-btn-secondary" onClick={() => startEdit(r)} style={{ minHeight: 30, padding: '4px 10px' }}>編集</button>
+                              {status === 'draft' && (
+                                <button className="payroll-btn-primary" onClick={() => transition(r, 'confirmed')} style={{ minHeight: 30, padding: '4px 10px' }}>確定</button>
+                              )}
+                              {status === 'confirmed' && (
+                                <button className="payroll-btn-tkc" onClick={() => transition(r, 'tkc_entered')} style={{ minHeight: 30, padding: '4px 10px' }}>TKC済</button>
+                              )}
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="payroll-cards">
+            {filteredRows.map(r => {
               const isEdit = editing === r.id
               const e = empMap[r.employee_id]
               const status = r.status
@@ -432,7 +593,8 @@ export function Payroll() {
                 </div>
               )
             })}
-          </div>
+            </div>
+          )}
 
           <div className="payroll-help">
             <p>・指名件数を編集すると、指名手当(×¥500)・合計を自動再計算します</p>
