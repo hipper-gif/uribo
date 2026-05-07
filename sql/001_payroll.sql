@@ -163,9 +163,10 @@ INSERT INTO beauty_commission_table (sales_threshold, commission_amount, effecti
 (550000, 15000, '2026-04-01'),
 (600000, 20000, '2026-04-01');
 
--- 役職手当（店長 ¥30,000）
+-- 役職手当
 INSERT INTO beauty_position_allowance (position_name, amount, effective_from) VALUES
-('店長', 30000, '2026-04-01');
+('店長', 30000, '2026-04-01'),
+('技術責任者', 3000, '2026-04-01');
 
 -- サロンボードマッピング（10名・4月実機検証済）
 INSERT INTO salonboard_staff_alias (store_code, salonboard_name, employee_id) VALUES
