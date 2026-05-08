@@ -171,21 +171,31 @@ def login(page: Page, store: str, interactive: bool = True):
     print(f"  ログイン継続: {page.url}")
 
 
-def goto_aggregate(page: Page, year: int, month: int):
-    last_day = calendar.monthrange(year, month)[1]
-    year_s, month_s, start_s, end_s = f"{year}", f"{month:02d}", "01", f"{last_day:02d}"
+def goto_aggregate(page: Page, year: int, month: int, day_from: int = 1, day_to: int | None = None):
+    if day_to is None:
+        day_to = calendar.monthrange(year, month)[1]
+    year_s, month_s = f"{year}", f"{month:02d}"
+    start_s, end_s = f"{day_from:02d}", f"{day_to:02d}"
 
-    page.get_by_role("link", name="売上管理").first.click()
-    report_link = page.get_by_role("link", name="売上報告").first
-    report_link.wait_for(state="visible", timeout=15000)
-    report_link.click()
-    page.wait_for_load_state("domcontentloaded")
+    # 既に集計画面 (or aggregate画面) にいる場合、再度「売上管理→売上報告」する必要があるかチェック
+    if "/sales/salesReport" not in page.url:
+        page.get_by_role("link", name="売上管理").first.click()
+        report_link = page.get_by_role("link", name="売上報告").first
+        report_link.wait_for(state="visible", timeout=15000)
+        report_link.click()
+        page.wait_for_load_state("domcontentloaded")
+    else:
+        # 既に集計後のページなら「売上報告」リンクを再クリックして条件入力画面へ戻る
+        report_link = page.get_by_role("link", name="売上報告").first
+        if report_link.count() > 0:
+            report_link.click()
+            page.wait_for_load_state("domcontentloaded")
     page.wait_for_selector("#scopeDateFrom", timeout=15000, state="attached")
 
     start_compact = f"{year_s}{month_s}{start_s}"
     end_compact = f"{year_s}{month_s}{end_s}"
-    start_disp = f"{year}年{month}月{int(start_s)}日"
-    end_disp = f"{year}年{month}月{int(end_s)}日"
+    start_disp = f"{year}年{month}月{day_from}日"
+    end_disp = f"{year}年{month}月{day_to}日"
     page.evaluate(
         """([sc1, di1, sc2, di2]) => {
             document.querySelector('#scopeDateFrom').value = sc1;
@@ -243,6 +253,36 @@ def scrape_sales(page: Page) -> dict:
                 result["discount"] = abs(parse_amount(amount_raw))
 
     return result
+
+
+def scrape_payments(page: Page) -> dict:
+    """支払い情報セクションから支払方法別の金額を抽出
+
+    返却例: {'現金': 123456, 'クレジットカード': 100000, ...}
+    """
+    out: dict[str, int] = {}
+    container = page.locator("div.fr:has(h3.mod_title03:text-is('支払い情報'))").first
+    if container.count() == 0:
+        return out
+    main_table = container.locator("table.mod_table03").first
+    if main_table.count() == 0:
+        return out
+    for tr in main_table.locator("tbody > tr.mod_middle").all():
+        cls = tr.get_attribute("class") or ""
+        if " dn" in f" {cls} " or cls.endswith("dn"):
+            continue
+        th = tr.locator("th").first
+        p_fl = th.locator("p.fl")
+        if p_fl.count() > 0:
+            label = (p_fl.first.text_content() or "").strip()
+        else:
+            label = (th.text_content() or "").strip()
+        tds = tr.locator("td")
+        if tds.count() < 2:
+            continue
+        amount_raw = (tds.nth(1).text_content() or "").strip()
+        out[label] = parse_amount(amount_raw)
+    return out
 
 
 def goto_staff_summary(page: Page) -> None:
@@ -321,12 +361,14 @@ def scrape_staff_summary(page: Page) -> list[dict]:
     return parsed
 
 
-def fetch_one_store(month: str, store: str, interactive: bool = True, with_staff: bool = False) -> dict:
+def fetch_one_store(month: str, store: str, interactive: bool = True,
+                    with_staff: bool = False, with_payments: bool = False) -> dict:
     year_s, month_s = month.split("-")
     year, mon = int(year_s), int(month_s)
+    last_day = calendar.monthrange(year, mon)[1]
 
     print(f"  [{STORE_LABEL[store]}] サロンボードから取得中...")
-    result = {"sales": {}, "staff": []}
+    result = {"sales": {}, "staff": [], "payments": {}}
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=False,
@@ -342,6 +384,20 @@ def fetch_one_store(month: str, store: str, interactive: bool = True, with_staff
                 login(page, store, interactive=interactive)
                 goto_aggregate(page, year, mon)
                 result["sales"] = scrape_sales(page)
+                if with_payments:
+                    print(f"    支払区分取得中... (月全体)")
+                    result["payments"]["monthly"] = scrape_payments(page)
+                    # 現金期間別 (1-10, 11-20, 21-末日)
+                    cash_periods = [
+                        ("d01_10", 1, 10),
+                        ("d11_20", 11, 20),
+                        ("d21_end", 21, last_day),
+                    ]
+                    for key, df, dt in cash_periods:
+                        print(f"    支払区分取得中... ({df}-{dt}日)")
+                        goto_aggregate(page, year, mon, day_from=df, day_to=dt)
+                        period_pay = scrape_payments(page)
+                        result["payments"][key] = period_pay
                 if with_staff:
                     print(f"    スタッフ別集計取得中...")
                     goto_staff_summary(page)
@@ -367,6 +423,9 @@ def fetch_one_store(month: str, store: str, interactive: bool = True, with_staff
     )
     if with_staff:
         print(f"    スタッフ {len(result['staff'])}名取得")
+    if with_payments:
+        m = result["payments"].get("monthly", {})
+        print(f"    支払区分 月全体: {sum(m.values()):,}円分取得")
     return result
 
 
@@ -630,6 +689,80 @@ def upsert_payroll(record: dict) -> str:
     return "inserted"
 
 
+# ---- 支払区分 同期 ------------------------------------------------------
+
+PAYMENT_LABEL_TO_CODE_MONTHLY = {
+    'クレジットカード': 'card_sales',
+    'クレカ': 'card_sales',
+    '電子マネー': 'ic_sales',
+    'ギフト券': 'gift_sales',
+    'ポイント': 'point_sales',
+    'その他': 'other_payment_sales',
+}
+PAYMENT_CODE_CASH_PERIOD = {
+    'd01_10': 'cash_sales_d01_10',
+    'd11_20': 'cash_sales_d11_20',
+    'd21_end': 'cash_sales_d21_end',
+}
+
+_payment_item_map_cache: dict[str, int] = {}
+
+
+def get_payment_item_id_map() -> dict[str, int]:
+    global _payment_item_map_cache
+    if _payment_item_map_cache:
+        return _payment_item_map_cache
+    qs = urllib.parse.urlencode({"item_code": "like.*sales*"})
+    rows = _api_request("GET", f"beauty_item_master?{qs}")
+    if isinstance(rows, list):
+        _payment_item_map_cache = {r["item_code"]: int(r["id"]) for r in rows}
+    return _payment_item_map_cache
+
+
+def push_payments_to_uribo(store: str, month: str, payments: dict, dry_run: bool = False) -> None:
+    year_s, month_s = month.split("-")
+    year, mon = int(year_s), int(month_s)
+    fy = fiscal_year_for(year, mon)
+    sid = STORE_TO_ID[store]
+    item_map = get_payment_item_id_map()
+
+    print(f"\n  [{STORE_LABEL[store]}] 支払区分 投入")
+
+    monthly = payments.get("monthly", {})
+    seen_codes: set[str] = set()
+    for sb_label, code in PAYMENT_LABEL_TO_CODE_MONTHLY.items():
+        if sb_label not in monthly:
+            continue
+        if code in seen_codes:
+            continue
+        seen_codes.add(code)
+        amount = monthly[sb_label]
+        item_id = item_map.get(code)
+        if item_id is None:
+            print(f"    [WARN] beauty_item_master に '{code}' がありません (skip)")
+            continue
+        line = f"    {code:<22} = {amount:>10,}円"
+        if dry_run:
+            print(line + "  [dry-run]")
+        else:
+            action = upsert_amount(sid, fy, mon, item_id, amount)
+            print(line + f"  ({action})")
+
+    for key, code in PAYMENT_CODE_CASH_PERIOD.items():
+        period = payments.get(key, {})
+        cash = period.get("現金", 0)
+        item_id = item_map.get(code)
+        if item_id is None:
+            print(f"    [WARN] beauty_item_master に '{code}' がありません (skip)")
+            continue
+        line = f"    {code:<22} = {cash:>10,}円"
+        if dry_run:
+            print(line + "  [dry-run]")
+        else:
+            action = upsert_amount(sid, fy, mon, item_id, cash)
+            print(line + f"  ({action})")
+
+
 def push_staff_payroll(store: str, month: str, staff_list: list[dict], dry_run: bool = False) -> None:
     year_s, month_s = month.split("-")
     year, mon = int(year_s), int(month_s)
@@ -670,7 +803,15 @@ def main():
     )
     parser.add_argument(
         "--only-staff", action="store_true",
-        help="店舗合計をスキップしてスタッフ別のみ取得（マッピング修正後の再取得用）",
+        help="店舗合計をスキップしてスタッフ別のみ取得",
+    )
+    parser.add_argument(
+        "--with-payments", action="store_true",
+        help="支払区分(現金1-10/11-20/21-末日 + カード/電子マネー/ギフト券/ポイント/その他)も取得",
+    )
+    parser.add_argument(
+        "--only-payments", action="store_true",
+        help="店舗合計をスキップして支払区分のみ取得",
     )
     parser.add_argument(
         "--non-interactive", action="store_true",
@@ -682,25 +823,40 @@ def main():
     stores = ["neyagawa", "moriguchi"] if args.store == "both" else [args.store]
     interactive = not args.non_interactive
     with_staff = args.with_staff or args.only_staff
+    with_payments = args.with_payments or args.only_payments
+    skip_aggregate = args.only_staff or args.only_payments
 
     print(f"\n=== サロンボード同期 {month} ===")
+    modes = []
+    if not skip_aggregate:
+        modes.append("店舗合計")
     if with_staff:
-        print(f"    モード: 店舗合計{'スキップ' if args.only_staff else '+'} スタッフ別給与計算")
+        modes.append("スタッフ別給与計算")
+    if with_payments:
+        modes.append("支払区分")
+    print(f"    モード: {' + '.join(modes) if modes else '店舗合計のみ'}")
 
     for i, store in enumerate(stores):
         if i > 0:
             print("\n  (10秒待機)")
             time.sleep(10)
-        data = fetch_one_store(month, store, interactive=interactive, with_staff=with_staff)
+        data = fetch_one_store(
+            month, store, interactive=interactive,
+            with_staff=with_staff, with_payments=with_payments,
+        )
         if args.dry_run:
             print(f"    [dry-run] APIには送信しません")
             if with_staff and data["staff"]:
                 push_staff_payroll(store, month, data["staff"], dry_run=True)
+            if with_payments and data["payments"]:
+                push_payments_to_uribo(store, month, data["payments"], dry_run=True)
         else:
-            if not args.only_staff:
+            if not skip_aggregate:
                 push_to_uribo(store, month, data["sales"])
             if with_staff and data["staff"]:
                 push_staff_payroll(store, month, data["staff"], dry_run=False)
+            if with_payments and data["payments"]:
+                push_payments_to_uribo(store, month, data["payments"], dry_run=False)
 
     print("\n完了")
 
