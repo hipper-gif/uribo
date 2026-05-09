@@ -320,18 +320,72 @@ def get_alias_by_tkc() -> dict[str, dict]:
 
 def get_employment_type(employee_id: int, year: int, month: int) -> str:
     """その月時点のスタッフの雇用形態を取得"""
+    grade = get_active_grade_record(employee_id, year, month)
+    return grade["employment_type"] if grade else ""
+
+
+def get_active_grade_record(employee_id: int, year: int, month: int) -> dict | None:
+    """その月時点で active な beauty_employee_grade レコードを返す"""
     qs = urllib.parse.urlencode({
         "employee_id": f"eq.{employee_id}",
         "order": "effective_from.desc",
     })
     rows = _api_get(f"beauty_employee_grade?{qs}")
     month_start = f"{year:04d}-{month:02d}-01"
+    month_end = f"{year:04d}-{month:02d}-31"
     for r in rows:
-        if r["effective_from"] <= f"{year:04d}-{month:02d}-31":
+        if r["effective_from"] <= month_end:
             eto = r.get("effective_to")
             if eto is None or eto >= month_start:
-                return r["employment_type"]
-    return ""
+                return r
+    return None
+
+
+def get_grade_master_amount(employment_type: str, grade: str, year: int, month: int) -> int:
+    """beauty_salary_grade マスタからその月時点の base_amount を取得"""
+    qs = urllib.parse.urlencode({
+        "employment_type": f"eq.{employment_type}",
+        "grade": f"eq.{grade}",
+        "order": "effective_from.desc",
+    })
+    rows = _api_get(f"beauty_salary_grade?{qs}")
+    month_start = f"{year:04d}-{month:02d}-01"
+    month_end = f"{year:04d}-{month:02d}-31"
+    for r in rows:
+        if r["effective_from"] <= month_end:
+            eto = r.get("effective_to")
+            if eto is None or eto >= month_start:
+                return int(r.get("base_amount") or 0)
+    return 0
+
+
+def check_contract_drift(emp_id: int, year: int, month: int, pdf_base_salary: int) -> dict | None:
+    """契約ドリフト検知: TKC PDFの基本給 vs DB(マスタ+override)を比較
+
+    ズレがあれば { master, override, db_total, pdf_actual, diff, suggested_override } を返す。
+    用途: 契約書とDBの不整合・override設定漏れの早期検知
+    """
+    grade = get_active_grade_record(emp_id, year, month)
+    if grade is None:
+        return None
+    if grade["employment_type"] == "パート":
+        return None  # パートはTKC側で時給×時間決定なので対象外
+    master = get_grade_master_amount(grade["employment_type"], grade["grade"], year, month)
+    db_override = int(grade.get("base_salary_override") or 0)
+    db_total = master + db_override
+    if db_total == pdf_base_salary:
+        return None
+    return {
+        "master": master,
+        "db_override": db_override,
+        "db_total": db_total,
+        "pdf_actual": pdf_base_salary,
+        "diff": pdf_base_salary - db_total,
+        "suggested_override": pdf_base_salary - master,
+        "employment_type": grade["employment_type"],
+        "grade": grade["grade"],
+        "grade_id": grade["id"],
+    }
 
 
 def get_payroll_record(employee_id: int, year: int, month: int) -> dict | None:
@@ -598,6 +652,26 @@ def main():
         for r in diff_people:
             issues = ", ".join(d["label"] for d in r["diffs"] if not d["match"])
             print(f"    - {r['name']}: {issues}")
+
+    # ===== 契約ドリフト検知 =====
+    print(f"\n=== 契約ドリフト検知 (DB grade × master vs PDF実額) ===")
+    drift_count = 0
+    for pdf_rec in pdf_records:
+        alias = alias_map.get(pdf_rec["tkc_code"])
+        if not alias:
+            continue
+        emp_id = int(alias["employee_id"])
+        drift = check_contract_drift(emp_id, year, month, pdf_rec.get("base_salary", 0))
+        if drift is None:
+            continue
+        drift_count += 1
+        print(f"  ⚠ {pdf_rec['name']:<14} ({drift['employment_type']}{drift['grade']}ランク)")
+        print(f"      マスタ値: ¥{drift['master']:,}  +  DB override: ¥{drift['db_override']:>+,}  =  DB合計: ¥{drift['db_total']:,}")
+        print(f"      PDF実額: ¥{drift['pdf_actual']:,}  (差: ¥{drift['diff']:>+,})")
+        print(f"      推奨対応: beauty_employee_grade(id={drift['grade_id']}).base_salary_override = {drift['suggested_override']}")
+        print(f"        → 契約書記載と一致するか確認 / DB更新するなら notes に変更理由を記録")
+    if drift_count == 0:
+        print("  ✓ ドリフト無し（DBの契約情報とPDF実額が一致）")
 
     if args.json:
         print("\n--- JSON ---")
