@@ -792,11 +792,54 @@ def push_staff_payroll(store: str, month: str, staff_list: list[dict], dry_run: 
             print(line + f"  ({action})")
 
 
+# ---- Suttade JSON 取り込みモード ------------------------------------------
+
+
+def _parse_amount_str(s: str) -> int:
+    digits = re.sub(r"[^0-9\-]", "", s)
+    return int(digits) if digits and digits != "-" else 0
+
+
+def _period_list_to_dict(rows: list[dict]) -> dict[str, int]:
+    """Suttade JSON の period 配列 [{label, count, amount}, ...] → {label: int}"""
+    return {r["label"]: _parse_amount_str(r["amount"]) for r in rows if "label" in r and "amount" in r}
+
+
+def sync_from_suttade_json(json_path: Path, month: str, dry_run: bool = False) -> None:
+    """Suttade が保存した salonboard_raw.json を読み込んで支払区分を DB に UPSERT する。
+    ログイン・スクレイプは一切行わない。"""
+    print(f"\n=== Suttade JSON 取り込みモード ===")
+    print(f"  JSON: {json_path}")
+    print(f"  月:   {month}")
+
+    data = json.loads(json_path.read_text(encoding="utf-8"))
+
+    for store, store_id in [("neyagawa", 1), ("moriguchi", 2)]:
+        store_data = data.get("stores", {}).get(store)
+        if store_data is None:
+            print(f"  [{store}] データなし、スキップ")
+            continue
+
+        pbp = store_data.get("payments_by_period", {})
+        payments: dict[str, dict[str, int]] = {}
+        for key in ("monthly", "d01_10", "d11_20", "d21_end"):
+            if key in pbp:
+                payments[key] = _period_list_to_dict(pbp[key])
+
+        push_payments_to_uribo(store, month, payments, dry_run=dry_run)
+
+    print("\n完了")
+
+
 def main():
     parser = argparse.ArgumentParser(description="サロンボード→Uribo同期")
     parser.add_argument("--store", choices=["neyagawa", "moriguchi", "both"], default="both")
     parser.add_argument("--month", help="対象月 YYYY-MM（省略時は前月）")
     parser.add_argument("--dry-run", action="store_true", help="取得結果だけ表示してAPIには送らない")
+    parser.add_argument(
+        "--use-suttade-json", metavar="PATH",
+        help="Suttade が保存した salonboard_raw.json のパス。指定時はログイン/スクレイプをスキップして JSON から DB 更新のみ実行",
+    )
     parser.add_argument(
         "--with-staff", action="store_true",
         help="スタッフ別集計も取得して beauty_payroll_monthly に投入（給与計算用）",
@@ -820,6 +863,15 @@ def main():
     args = parser.parse_args()
 
     month = args.month or prev_month_str()
+
+    # Suttade JSON 取り込みモード: ログイン・スクレイプをスキップ
+    if args.use_suttade_json:
+        json_path = Path(args.use_suttade_json)
+        if not json_path.exists():
+            raise SystemExit(f"JSON ファイルが見つかりません: {json_path}")
+        sync_from_suttade_json(json_path, month, dry_run=args.dry_run)
+        return
+
     stores = ["neyagawa", "moriguchi"] if args.store == "both" else [args.store]
     interactive = not args.non_interactive
     with_staff = args.with_staff or args.only_staff
