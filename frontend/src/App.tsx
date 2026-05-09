@@ -21,7 +21,7 @@ export default function App() {
       <div className="app">
         <header className="topbar">
           <div className="brand">
-            <div className="brand-mark">U</div>
+            <img src="/uribo/icon-192.png" alt="うりぼー" className="brand-logo" />
             <div className="brand-text">
               <span className="brand-name">うりぼー</span>
               <span className="brand-sub">BEAUTY · SALES OS</span>
