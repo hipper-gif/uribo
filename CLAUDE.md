@@ -7,6 +7,15 @@
 - **技術スタック**: React + TypeScript + Tailwind + PHP + MySQL
 - **リポジトリ**: https://github.com/hipper-gif/uribo
 
+## デプロイ先
+
+- **使う人区分**: 👤 個人（美容部長必須） + 🏢 社内（他部門長/経営層閲覧）※両面持ち
+- **公開URL**: https://twinklemark.xsrv.jp/uribo/
+- **デプロイ先パス**: `~/twinklemark.xsrv.jp/public_html/uribo/`
+- **DB**: `twinklemark_nicolio`（**Nicolio共有DB、beauty_monthly_data 等のテーブル**）
+- **⚠️ 共有DB**: DDL変更は Nicolio/Thalia/しんせいくん等に影響。安全フロー必須
+- **詳細ルール**: `clio/knowledge/deploy-layout.md`
+
 ## 技術スタック
 
 React + TypeScript + Tailwind + PHP + MySQL
