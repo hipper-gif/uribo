@@ -40,6 +40,12 @@ export function DataEntry() {
   const customersItem = useMemo(() => items.find(i => i.item_code === 'customers'), [items])
   const discountItem = useMemo(() => items.find(i => i.item_code === 'discount'), [items])
 
+  // 仕入カテゴリは税抜入力 / DBは税込保存。入力欄⇄DB の変換係数。
+  const itemIsTaxExclusive = useCallback((itemId: number) => {
+    const it = items.find(i => i.id === itemId)
+    return it?.item_category === '仕入'
+  }, [items])
+
   const loadData = useCallback(async () => {
     if (!storeId || !fiscalYear) return
     setLoading(true)
@@ -54,7 +60,12 @@ export function DataEntry() {
     setExistingData(current)
     setPrevMonthData(prevData)
     const newValues: FormValues = {}
-    for (const d of current) newValues[d.item_id] = d.amount
+    for (const d of current) {
+      // 仕入カテゴリは DB(税込) → 入力欄(税抜) に換算
+      newValues[d.item_id] = itemIsTaxExclusive(d.item_id)
+        ? String(Math.round(parseFloat(d.amount) / 1.1))
+        : d.amount
+    }
     const fixedItems = items.filter(i => i.item_category === '固定費')
     for (const item of fixedItems) {
       if (!newValues[item.id]) {
@@ -64,7 +75,7 @@ export function DataEntry() {
     }
     setValues(newValues)
     setLoading(false)
-  }, [storeId, fiscalYear, month, dataType, items])
+  }, [storeId, fiscalYear, month, dataType, items, itemIsTaxExclusive])
 
   useEffect(() => { if (items.length > 0) loadData() }, [loadData, items.length])
 
@@ -77,10 +88,13 @@ export function DataEntry() {
     return v ? (parseFloat(v) || 0) : 0
   }, [values])
 
-  // item_code -> 数値 の lookup（派生計算用）
+  // item_code -> 数値 の lookup（派生計算用）。仕入カテゴリは入力欄が税抜なので税込換算してから計算式に渡す。
   const codeValues = useMemo(() => {
     const out: Record<string, number> = {}
-    for (const it of items) out[it.item_code] = numVal(it.id)
+    for (const it of items) {
+      const raw = numVal(it.id)
+      out[it.item_code] = it.item_category === '仕入' ? raw * 1.1 : raw
+    }
     return out
   }, [items, numVal])
 
@@ -92,9 +106,11 @@ export function DataEntry() {
 
   const catTotal = useCallback((cat: string) => {
     // 派生計算項目（仕入消費税・納付税額など）はカテゴリ合計から除外して二重計上を防ぐ
+    // 仕入カテゴリは税抜入力 → 税込で集計(×1.1)
+    const factor = cat === '仕入' ? 1.1 : 1
     return (expenseGroups[cat] ?? [])
       .filter(i => calcDerivedAmount(i.item_code, codeValues) === null)
-      .reduce((s, i) => s + numVal(i.id), 0)
+      .reduce((s, i) => s + numVal(i.id) * factor, 0)
   }, [expenseGroups, numVal, codeValues])
 
   const totalExp = useMemo(() => {
@@ -127,11 +143,15 @@ export function DataEntry() {
       for (const [idStr, amount] of Object.entries(values)) {
         const itemId = parseInt(idStr, 10)
         if (!amount && amount !== '0') continue
+        // 仕入カテゴリは入力欄(税抜) → DB(税込) に換算して保存
+        const dbAmount = itemIsTaxExclusive(itemId)
+          ? Math.round(parseFloat(amount) * 1.1)
+          : parseFloat(amount)
         const existing = existingData.find(d => d.item_id === itemId)
         if (existing) {
-          promises.push(apiPatch('beauty_monthly_data', { id: `eq.${existing.id}` }, { amount: parseFloat(amount) }))
+          promises.push(apiPatch('beauty_monthly_data', { id: `eq.${existing.id}` }, { amount: dbAmount }))
         } else {
-          promises.push(apiPost('beauty_monthly_data', { store_id: storeId, fiscal_year: fiscalYear, month, data_type: dataType, item_id: itemId, amount: parseFloat(amount) }))
+          promises.push(apiPost('beauty_monthly_data', { store_id: storeId, fiscal_year: fiscalYear, month, data_type: dataType, item_id: itemId, amount: dbAmount }))
         }
       }
       await Promise.all(promises)
@@ -142,7 +162,7 @@ export function DataEntry() {
     } finally {
       setSaving(false)
     }
-  }, [values, existingData, storeId, fiscalYear, month, dataType, loadData])
+  }, [values, existingData, storeId, fiscalYear, month, dataType, loadData, itemIsTaxExclusive])
 
   useEffect(() => {
     if (message) { const t = setTimeout(() => setMessage(null), 3000); return () => clearTimeout(t) }
@@ -203,7 +223,10 @@ export function DataEntry() {
             {/* Sales card */}
             <div className="card">
               <div className="card-head">
-                <div className="card-title"><span className="index">01</span>売上</div>
+                <div className="card-title">
+                  <span className="index">01</span>売上
+                  <span className="chip" style={{ marginLeft: 8, fontSize: 10, fontWeight: 500 }}>税込入力</span>
+                </div>
               </div>
               <div>
                 {topItems.map((item, i) => {
@@ -257,6 +280,9 @@ export function DataEntry() {
                   <div className="card-head">
                     <div className="card-title">
                       <span className="index">{String(idx + 2).padStart(2, '0')}</span>{cat}
+                      <span className="chip" style={{ marginLeft: 8, fontSize: 10, fontWeight: 500 }}>
+                        {cat === '仕入' ? '税抜入力 / 税込で集計' : '税込入力'}
+                      </span>
                     </div>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                       {cat === '固定費' && (
@@ -291,7 +317,10 @@ export function DataEntry() {
                           <span className="smallcaps" style={{ textAlign: 'right' }}>
                             前月 {(() => {
                               const pv = prevMonthData.find(d => d.item_id === item.id)
-                              return pv ? formatMan(parseFloat(pv.amount)) : '—'
+                              if (!pv) return '—'
+                              const v = parseFloat(pv.amount)
+                              // 仕入カテゴリは DB(税込) を税抜表示に揃える
+                              return formatMan(item.item_category === '仕入' ? v / 1.1 : v)
                             })()}
                           </span>
                           <input type="number" value={values[item.id] ?? ''} onChange={e => setValue(item.id, e.target.value)}
