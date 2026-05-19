@@ -23,7 +23,7 @@ sales に純売上（=総売上-割引）を入れると割引が二重控除に
 
 - **Python 3.10+**
 - **GUI 環境**: サロンボードは Akamai Bot Manager 対策で headless=False 必須。実行中にブラウザウィンドウが開く
-- **認証情報**: 寝屋川店・守口店それぞれの ID/PASS が必要
+- **認証情報**: Mneme credentials に `salonboard_neyagawa` / `salonboard_moriguchi` として登録済（PWは AES-256-GCM 暗号化保存）。`.env` 直書きは廃止
 
 ### セットアップ
 
@@ -32,8 +32,8 @@ cd C:\Users\nikon\projects\uribo\scripts
 pip install -r requirements.txt
 playwright install chromium
 
+# Mneme API 接続情報のデフォルトを上書きする場合のみ .env を作成
 copy .env.example .env
-# .env にサロンボード認証情報を記入
 ```
 
 ### 実行

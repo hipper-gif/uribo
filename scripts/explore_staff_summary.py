@@ -43,14 +43,15 @@ def prev_month_str() -> str:
 
 
 def creds_for(store: str) -> tuple[str, str]:
-    if store == "neyagawa":
-        uid = os.getenv("SALONBOARD_NEYAGAWA_ID")
-        pwd = os.getenv("SALONBOARD_NEYAGAWA_PASS")
-    else:
-        uid = os.getenv("SALONBOARD_MORIGUCHI_ID")
-        pwd = os.getenv("SALONBOARD_MORIGUCHI_PASS")
+    from credentials import get as get_credential
+    service = f"salonboard_{store}"
+    try:
+        cred = get_credential(service)
+    except Exception as e:
+        raise SystemExit(f"Mneme から {service} の認証情報を取得できませんでした: {e}")
+    uid, pwd = cred.get("username"), cred.get("password")
     if not uid or not pwd:
-        raise SystemExit(f".env に {store} の SALONBOARD 認証情報が設定されていません")
+        raise SystemExit(f"Mneme credentials({service}) に username/password が未設定です")
     return uid, pwd
 
 
