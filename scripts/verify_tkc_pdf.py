@@ -20,7 +20,10 @@ PDFから抽出する項目:
 --apply 時のDB反映:
     beauty_payroll_monthly: gross_total, net_payment, social_insurance_total,
         income_tax, resident_tax, tkc_pdf_filename, tkc_verified_at, status='tkc_entered'
-    beauty_monthly_data: 店舗別合計を 人件費(item_id=6) / 法定福利費(item_id=11) に UPSERT
+    beauty_monthly_data: 店舗別合計を以下3項目に UPSERT
+        - 人件費(item_id=6): gross_total 合計
+        - 法定福利費(item_id=11): social_insurance_total 合計 (会社負担分のみ・×1)
+        - 交通費合計(item_id=7): transit_amount 合計 (beauty_payroll_monthly から取得)
 """
 import argparse
 import json
@@ -468,7 +471,10 @@ def apply_to_db(year: int, month: int, pdf_records: list[dict],
 
     # store_code → store_id (1=寝屋川, 2=守口)
     STORE_MAP = {"neyagawa": 1, "moriguchi": 2}
-    by_store: dict[int, dict] = {1: {"salary": 0, "welfare": 0}, 2: {"salary": 0, "welfare": 0}}
+    by_store: dict[int, dict] = {
+        1: {"salary": 0, "welfare": 0, "transit": 0},
+        2: {"salary": 0, "welfare": 0, "transit": 0},
+    }
 
     for pdf in pdf_records:
         alias = alias_map.get(pdf["tkc_code"])
@@ -509,19 +515,40 @@ def apply_to_db(year: int, month: int, pdf_records: list[dict],
             by_store[store_id]["salary"] += pdf.get("gross_total", 0)
             by_store[store_id]["welfare"] += pdf.get("social_insurance_total", 0)
 
+    # 交通費は beauty_payroll_monthly.transit_amount から店舗別集計
+    qs_transit = urllib.parse.urlencode({
+        "select": "store_id,transit_amount",
+        "year": f"eq.{year}",
+        "month": f"eq.{month}",
+    })
+    try:
+        transit_rows = _api_get(f"beauty_payroll_monthly?{qs_transit}")
+        for row in transit_rows:
+            sid = row.get("store_id")
+            if sid in by_store:
+                by_store[sid]["transit"] += int(row.get("transit_amount") or 0)
+    except Exception as e:
+        print(f"  [warn] 交通費集計失敗: {e}")
+
     # 店舗別合計を beauty_monthly_data へ UPSERT
     print("\n=== 月次入力反映 (beauty_monthly_data) ===")
-    print("    [前提] 法定福利費は労使折半の概算で社会保険料合計×2 とする")
+    print("    [前提] 法定福利費=給与明細の社会保険料控除合計(会社負担分のみ・×1)")
+    print("    [前提] 交通費合計=beauty_payroll_monthly.transit_amount の店舗別集計")
     fy = fiscal_year_for(year, month)
     STORE_LABEL = {1: "寝屋川店", 2: "守口店"}
     for store_id, vals in by_store.items():
         salary = vals["salary"]
-        welfare = vals["welfare"] * 2  # 労使折半概算
-        if salary == 0 and welfare == 0:
+        welfare = vals["welfare"]  # ×1: 会社負担分のみ(健保+厚生年金は労使折半なので給与控除≒会社負担)
+        transit = vals["transit"]
+        if salary == 0 and welfare == 0 and transit == 0:
             continue
         a1 = upsert_monthly_data(store_id, fy, month, 6, salary)
         a2 = upsert_monthly_data(store_id, fy, month, 11, welfare)
-        print(f"  {STORE_LABEL[store_id]}: 人件費=¥{salary:,} ({a1}) / 法定福利費=¥{welfare:,} ({a2})")
+        a3 = upsert_monthly_data(store_id, fy, month, 7, transit)
+        print(
+            f"  {STORE_LABEL[store_id]}: 人件費=¥{salary:,} ({a1}) / "
+            f"法定福利費=¥{welfare:,} ({a2}) / 交通費=¥{transit:,} ({a3})"
+        )
 
     # PDFをサーバーの非公開ディレクトリにアップロード (爽夏さんがUriboで参照できるように)
     if pdf_path is not None:
