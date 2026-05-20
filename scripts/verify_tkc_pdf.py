@@ -22,7 +22,7 @@ PDFから抽出する項目:
         income_tax, resident_tax, tkc_pdf_filename, tkc_verified_at, status='tkc_entered'
     beauty_monthly_data: 店舗別合計を以下3項目に UPSERT
         - 人件費(item_id=6): gross_total 合計
-        - 法定福利費(item_id=11): social_insurance_total 合計 (会社負担分のみ・×1)
+        - 法定福利費(item_id=11): 健保+厚生年金 のみ合計 (雇用保険・社保合計は除外)
         - 交通費合計(item_id=7): transit_amount 合計 (beauty_payroll_monthly から取得)
 """
 import argparse
@@ -146,7 +146,9 @@ def _parse_by_coords(pdf_path: Path) -> list[dict]:
             "nomination_allowance": 0, "commission_amount": 0,
             "perfect_attendance_amount": 0,
             "gross_total": 0, "net_payment": 0,
-            "social_insurance_total": 0, "income_tax": 0, "resident_tax": 0,
+            "social_insurance_total": 0,
+            "health_insurance": 0, "pension_insurance": 0, "employment_insurance": 0,
+            "income_tax": 0, "resident_tax": 0,
             "reimbursement": 0,
         }
 
@@ -172,11 +174,18 @@ def _parse_by_coords(pdf_path: Path) -> list[dict]:
             elif _in_range(x, "col_total"):
                 rec["gross_total"] = v
 
-        # 3. 控除セクション (社会保険料合計・所得税・住民税・立替金)
+        # 3. 控除セクション (健保・厚年・雇用保険・社保合計・所得税・住民税・立替金)
         # 「健康保険」ラベル行の下に「控」記号行を挟んで値行が来るため dy_max=30
+        # col1=健保, col2=厚年, col3=雇用, col4=社保合計
         health_y = find_y(bw, "健康保険")
         for x, v in values_at(bw, health_y, dy_max=30):
-            if _in_range(x, "col4"):
+            if _in_range(x, "col1"):
+                rec["health_insurance"] = v
+            elif _in_range(x, "col2"):
+                rec["pension_insurance"] = v
+            elif _in_range(x, "col3"):
+                rec["employment_insurance"] = v
+            elif _in_range(x, "col4"):
                 rec["social_insurance_total"] = v
             elif _in_range(x, "col6"):
                 rec["income_tax"] = v
@@ -227,6 +236,9 @@ def _parse_text_legacy(pdf_path: Path) -> list[dict]:
             "gross_total": 0,
             "net_payment": 0,
             "social_insurance_total": 0,
+            "health_insurance": 0,
+            "pension_insurance": 0,
+            "employment_insurance": 0,
             "income_tax": 0,
             "resident_tax": 0,
         }
@@ -271,7 +283,7 @@ def _parse_text_legacy(pdf_path: Path) -> list[dict]:
                     record["net_payment"] = nums[-1]
                 break
 
-        # 5. 社会保険料合計・所得税・住民税
+        # 5. 健保・厚年・雇用・社会保険料合計・所得税・住民税
         # ラベル: 「健康保険 厚生年金 雇用保険 社会保険料合計 課税対象額 所 得 税 住 民 税 ...」
         # 値: [健保, 厚年, 雇用, 社保合計, 課税対象額, 所得税, 住民税, ...]
         # PDF構造: 「健康保険…食事代」行 → 「控」記号行 → 値行 のため数値含む行を探す
@@ -281,6 +293,9 @@ def _parse_text_legacy(pdf_path: Path) -> list[dict]:
                     cand = lines[j]
                     nums = extract_numbers(cand)
                     if len(nums) >= 3:
+                        record["health_insurance"] = nums[0]
+                        record["pension_insurance"] = nums[1]
+                        record["employment_insurance"] = nums[2]
                         if len(nums) >= 4:
                             record["social_insurance_total"] = nums[3]
                         if len(nums) >= 6:
@@ -511,9 +526,12 @@ def apply_to_db(year: int, month: int, pdf_records: list[dict],
             continue
 
         # 店舗別集計
+        # 法定福利費は健保+厚生年金のみ(雇用保険は除外)
         if store_id in by_store:
             by_store[store_id]["salary"] += pdf.get("gross_total", 0)
-            by_store[store_id]["welfare"] += pdf.get("social_insurance_total", 0)
+            by_store[store_id]["welfare"] += (
+                pdf.get("health_insurance", 0) + pdf.get("pension_insurance", 0)
+            )
 
     # 交通費は beauty_payroll_monthly.transit_amount から店舗別集計
     qs_transit = urllib.parse.urlencode({
@@ -532,7 +550,7 @@ def apply_to_db(year: int, month: int, pdf_records: list[dict],
 
     # 店舗別合計を beauty_monthly_data へ UPSERT
     print("\n=== 月次入力反映 (beauty_monthly_data) ===")
-    print("    [前提] 法定福利費=給与明細の社会保険料控除合計(会社負担分のみ・×1)")
+    print("    [前提] 法定福利費=健保+厚生年金 のみ(雇用保険・社保合計は除外)")
     print("    [前提] 交通費合計=beauty_payroll_monthly.transit_amount の店舗別集計")
     fy = fiscal_year_for(year, month)
     STORE_LABEL = {1: "寝屋川店", 2: "守口店"}
