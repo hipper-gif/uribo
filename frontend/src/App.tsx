@@ -5,6 +5,7 @@ import { MonthlyReport } from './pages/MonthlyReport'
 import { DataEntry } from './pages/DataEntry'
 import { TargetSetting } from './pages/TargetSetting'
 import { Payroll } from './pages/Payroll'
+import { TkcCompare } from './pages/TkcCompare'
 
 const NAV = [
   { to: '/', label: '年間', idx: '01' },
@@ -15,7 +16,20 @@ const NAV = [
   { to: '/payroll', label: '給与', idx: '06' },
 ]
 
+// 管理者専用ナビ(?admin=1 で表示)
+const ADMIN_NAV = [
+  { to: '/tkc-compare', label: 'TKC', idx: '★' },
+]
+
 export default function App() {
+  // URL に ?admin=1 が含まれていれば管理者モード(LocalStorage に保存)
+  if (typeof window !== 'undefined') {
+    const sp = new URLSearchParams(window.location.search)
+    if (sp.get('admin') === '1') localStorage.setItem('uribo_admin', '1')
+    if (sp.get('admin') === '0') localStorage.removeItem('uribo_admin')
+  }
+  const isAdmin = typeof window !== 'undefined' && localStorage.getItem('uribo_admin') === '1'
+  const navItems = isAdmin ? [...NAV, ...ADMIN_NAV] : NAV
   return (
     <BrowserRouter basename="/uribo">
       <div className="app">
@@ -28,7 +42,7 @@ export default function App() {
             </div>
           </div>
           <nav className="nav scrollbar-hide">
-            {NAV.map(n => (
+            {navItems.map(n => (
               <NavLink key={n.to} to={n.to} end={n.to === '/'}
                 className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
                 <span className="nav-num">{n.idx}</span>
@@ -51,6 +65,7 @@ export default function App() {
             <Route path="/entry" element={<DataEntry />} />
             <Route path="/targets" element={<TargetSetting />} />
             <Route path="/payroll" element={<Payroll />} />
+            <Route path="/tkc-compare" element={<TkcCompare />} />
           </Routes>
         </main>
       </div>

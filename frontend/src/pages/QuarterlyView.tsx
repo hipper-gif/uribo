@@ -1,7 +1,6 @@
-import { useState, useMemo, useEffect, Fragment } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
-import { MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan, applyTaxAdjust } from '../lib/types'
-import type { TaxMode } from '../lib/types'
+import { MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan } from '../lib/types'
 
 const QUARTERS = [
   { label: 'Q1', months: [4, 5, 6], sub: '4 – 6月' },
@@ -17,9 +16,6 @@ export function QuarterlyView() {
   const [fiscalYear, setFiscalYear] = useState(currentFiscalYear())
   const [quarter, setQuarter] = useState(0)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [taxMode, setTaxMode] = useState<TaxMode>(() =>
-    (typeof localStorage !== 'undefined' && localStorage.getItem('uribo_tax_mode') === 'exclusive') ? 'exclusive' : 'inclusive')
-  useEffect(() => { localStorage.setItem('uribo_tax_mode', taxMode) }, [taxMode])
 
   const { data: actualData, loading } = useMonthlyData(storeId, fiscalYear, '実績')
   const { data: targetData } = useMonthlyData(storeId, fiscalYear, '目標')
@@ -59,25 +55,12 @@ export function QuarterlyView() {
 
   const salesItem = items.find(i => i.item_code === 'sales')
   const mgmtFeeItem = items.find(i => i.item_code === MGMT_FEE_CODE)
-  const discountItem = items.find(i => i.item_code === 'discount')
-  const itemByIdMap = useMemo(() => { const mm: Record<number, typeof items[number]> = {}; for (const it of items) mm[it.id] = it; return mm }, [items])
   const q = QUARTERS[quarter]
 
-  // 税抜モード時: 売上=(税込売上−割引)/1.10, 割引=0, 課税科目=÷1.10, 非課税はそのまま
-  const adjustVal = (itemId: number, raw: number, lk: Record<number, Record<number, number>>, m: number): number => {
-    const it = itemByIdMap[itemId]
-    if (!it || taxMode === 'inclusive') return raw
-    if (it.item_code === 'sales') {
-      const disc = discountItem ? (lk[discountItem.id]?.[m] ?? 0) : 0
-      return Math.round((raw - disc) / 1.1)
-    }
-    if (it.item_code === 'discount') return 0
-    return applyTaxAdjust(it.item_code, raw, taxMode)
-  }
-  const getA = (itemId: number, m: number) => adjustVal(itemId, aLookup[itemId]?.[m] ?? 0, aLookup, m)
-  const getT = (itemId: number, m: number) => adjustVal(itemId, tLookup[itemId]?.[m] ?? 0, tLookup, m)
+  const getA = (itemId: number, m: number) => aLookup[itemId]?.[m] ?? 0
+  const getT = (itemId: number, m: number) => tLookup[itemId]?.[m] ?? 0
 
-  const qSumItem = (itemId: number, lk: typeof aLookup) => q.months.reduce((s, m) => s + adjustVal(itemId, lk[itemId]?.[m] ?? 0, lk, m), 0)
+  const qSumItem = (itemId: number, lk: typeof aLookup) => q.months.reduce((s, m) => s + (lk[itemId]?.[m] ?? 0), 0)
   // Twinkle代は管理費として独立計上するためカテゴリ合計から除外(二重控除防止)
   const qSumCat = (cat: string, lk: typeof aLookup) =>
     (expenseGroups[cat] ?? []).filter(it => it.item_code !== MGMT_FEE_CODE).reduce((s, it) => s + qSumItem(it.id, lk), 0)
@@ -110,14 +93,6 @@ export function QuarterlyView() {
             <h1 className="page-title">四半期成績</h1>
           </div>
           <div className="page-subtitle">{fiscalYear}年度 · 目標と実績の対比</div>
-        </div>
-        <div className="seg" role="tablist" title="税抜は売上=(税込売上−割引)/1.10、課税経費=÷1.10で表示">
-          <button className="seg-btn" aria-pressed={taxMode === 'inclusive'} onClick={() => setTaxMode('inclusive')}>
-            <span>税込</span><span className="sub">INCL</span>
-          </button>
-          <button className="seg-btn" aria-pressed={taxMode === 'exclusive'} onClick={() => setTaxMode('exclusive')}>
-            <span>税抜</span><span className="sub">EXCL</span>
-          </button>
         </div>
       </div>
 

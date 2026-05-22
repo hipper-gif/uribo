@@ -1,7 +1,7 @@
-import { useState, useMemo, Fragment, useEffect } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
-import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatAmount, formatPercent, formatMan, applyTaxAdjust } from '../lib/types'
-import type { DataType, TaxMode } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatAmount, formatPercent, formatMan } from '../lib/types'
+import type { DataType } from '../lib/types'
 
 type CompareBase = 'target' | 'lastyear' | 'forecast'
 
@@ -13,10 +13,6 @@ export function AnnualView() {
   const [dataType, setDataType] = useState<DataType>('実績')
   const [compareBase, setCompareBase] = useState<CompareBase>('target')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [taxMode, setTaxMode] = useState<TaxMode>(() => {
-    return (typeof localStorage !== 'undefined' && localStorage.getItem('uribo_tax_mode') === 'exclusive') ? 'exclusive' : 'inclusive'
-  })
-  useEffect(() => { localStorage.setItem('uribo_tax_mode', taxMode) }, [taxMode])
 
   const { data, loading } = useMonthlyData(storeId, fiscalYear, dataType)
   const { data: targetData } = useMonthlyData(storeId, fiscalYear, '目標')
@@ -45,12 +41,6 @@ export function AnnualView() {
   const salesItem = useMemo(() => items.find(i => i.item_code === 'sales'), [items])
   const customersItem = useMemo(() => items.find(i => i.item_code === 'customers'), [items])
   const mgmtFeeItem = useMemo(() => items.find(i => i.item_code === MGMT_FEE_CODE), [items])
-  const discountItem = useMemo(() => items.find(i => i.item_code === 'discount'), [items])
-  const itemByIdMap = useMemo(() => {
-    const m: Record<number, typeof items[number]> = {}
-    for (const it of items) m[it.id] = it
-    return m
-  }, [items])
 
   // Lookup helpers
   const lookup = useMemo(() => {
@@ -81,22 +71,11 @@ export function AnnualView() {
     return map
   }, [targetData])
 
-  // 税抜モード時は: 売上=(税込売上-割引)/1.10, 割引=0(売上に統合), 課税科目=÷1.10, 非課税科目はそのまま
-  function adjustVal(itemId: number, raw: number, lk: Record<number, Record<number, number>>, month: number): number {
-    const item = itemByIdMap[itemId]
-    if (!item || taxMode === 'inclusive') return raw
-    if (item.item_code === 'sales') {
-      const disc = discountItem ? (lk[discountItem.id]?.[month] ?? 0) : 0
-      return Math.round((raw - disc) / 1.1)
-    }
-    if (item.item_code === 'discount') return 0
-    return applyTaxAdjust(item.item_code, raw, taxMode)
-  }
   function getVal(itemId: number, month: number): number {
-    return adjustVal(itemId, lookup[itemId]?.[month] ?? 0, lookup, month)
+    return lookup[itemId]?.[month] ?? 0
   }
   function getCmpVal(itemId: number, month: number): number {
-    return adjustVal(itemId, cmpLookup[itemId]?.[month] ?? 0, cmpLookup, month)
+    return cmpLookup[itemId]?.[month] ?? 0
   }
   function getRowTotal(itemId: number): number {
     return FISCAL_MONTHS.reduce((s, m) => s + getVal(itemId, m), 0)
@@ -137,17 +116,15 @@ export function AnnualView() {
   const totalCust = customersItem ? FISCAL_MONTHS.reduce((s, m) => s + getVal(customersItem.id, m), 0) : 0
   const activeMonths = FISCAL_MONTHS.filter(m => getSalesAmount(m) > 0).length
 
-  // 目標/比較データも税モードに合わせて換算
-  const getTgtVal = (itemId: number, m: number) => adjustVal(itemId, tgtLookup[itemId]?.[m] ?? 0, tgtLookup, m)
-  const tgtTotalSales = salesItem ? FISCAL_MONTHS.reduce((s, m) => s + getTgtVal(salesItem.id, m), 0) : 0
+  const tgtTotalSales = salesItem ? FISCAL_MONTHS.reduce((s, m) => s + (tgtLookup[salesItem.id]?.[m] ?? 0), 0) : 0
   const tgtTotalExp = FISCAL_MONTHS.reduce((s, m) =>
     s + EXPENSE_CATEGORIES.reduce((es, cat) =>
-      es + (expenseGroups[cat] ?? []).filter(i => i.item_code !== MGMT_FEE_CODE).reduce((is, i) => is + getTgtVal(i.id, m), 0), 0), 0)
+      es + (expenseGroups[cat] ?? []).filter(i => i.item_code !== MGMT_FEE_CODE).reduce((is, i) => is + (tgtLookup[i.id]?.[m] ?? 0), 0), 0), 0)
 
-  const cmpTotalSales = salesItem ? FISCAL_MONTHS.reduce((s, m) => s + getCmpVal(salesItem.id, m), 0) : 0
+  const cmpTotalSales = salesItem ? FISCAL_MONTHS.reduce((s, m) => s + (cmpLookup[salesItem.id]?.[m] ?? 0), 0) : 0
   const cmpTotalExp = FISCAL_MONTHS.reduce((s, m) =>
     s + EXPENSE_CATEGORIES.reduce((es, cat) =>
-      es + (expenseGroups[cat] ?? []).filter(i => i.item_code !== MGMT_FEE_CODE).reduce((is, i) => is + getCmpVal(i.id, m), 0), 0), 0)
+      es + (expenseGroups[cat] ?? []).filter(i => i.item_code !== MGMT_FEE_CODE).reduce((is, i) => is + (cmpLookup[i.id]?.[m] ?? 0), 0), 0), 0)
 
   const compareLabel = compareBase === 'target' ? `目標 ${fiscalYear}年度` : compareBase === 'lastyear' ? `昨対 ${fiscalYear - 1}年度実績` : `見通し ${fiscalYear}年度`
   const hasCmpData = dataType === '実績' && Object.keys(cmpLookup).length > 0
@@ -190,15 +167,6 @@ export function AnnualView() {
               </div>
             </div>
           )}
-          {/* Tax mode toggle */}
-          <div className="seg" role="tablist" title="税抜は売上=(税込売上−割引)/1.10、課税経費=÷1.10で表示">
-            <button className="seg-btn" aria-pressed={taxMode === 'inclusive'} onClick={() => setTaxMode('inclusive')}>
-              <span>税込</span><span className="sub">INCL</span>
-            </button>
-            <button className="seg-btn" aria-pressed={taxMode === 'exclusive'} onClick={() => setTaxMode('exclusive')}>
-              <span>税抜</span><span className="sub">EXCL</span>
-            </button>
-          </div>
         </div>
       </div>
 

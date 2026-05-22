@@ -1,7 +1,6 @@
-import { useState, useMemo, useEffect, Fragment } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
-import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan, calcDerivedAmount, applyTaxAdjust } from '../lib/types'
-import type { TaxMode } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan, calcDerivedAmount } from '../lib/types'
 
 export function MonthlyReport() {
   const stores = useStores()
@@ -10,9 +9,6 @@ export function MonthlyReport() {
   const [fiscalYear, setFiscalYear] = useState(currentFiscalYear())
   const [month, setMonth] = useState(new Date().getMonth() + 1)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [taxMode, setTaxMode] = useState<TaxMode>(() =>
-    (typeof localStorage !== 'undefined' && localStorage.getItem('uribo_tax_mode') === 'exclusive') ? 'exclusive' : 'inclusive')
-  useEffect(() => { localStorage.setItem('uribo_tax_mode', taxMode) }, [taxMode])
 
   const { data: actualData, loading } = useMonthlyData(storeId, fiscalYear, '実績')
   const { data: targetData } = useMonthlyData(storeId, fiscalYear, '目標')
@@ -62,27 +58,12 @@ export function MonthlyReport() {
   const salesItem = items.find(i => i.item_code === 'sales')
   const customersItem = items.find(i => i.item_code === 'customers')
   const mgmtFeeItem = items.find(i => i.item_code === MGMT_FEE_CODE)
-  const discountItem = items.find(i => i.item_code === 'discount')
-  const itemByIdMap = useMemo(() => { const m: Record<number, typeof items[number]> = {}; for (const it of items) m[it.id] = it; return m }, [items])
-  // 税抜モード時: 売上=(税込売上−割引)/1.10, 割引=0(売上に統合), 課税科目=÷1.10, 非課税科目はそのまま
-  const adjustVal = (itemId: number, raw: number, lk: Record<number, Record<number, number>>, m: number): number => {
-    const it = itemByIdMap[itemId]
-    if (!it || taxMode === 'inclusive') return raw
-    if (it.item_code === 'sales') {
-      const disc = discountItem ? (lk[discountItem.id]?.[m] ?? 0) : 0
-      return Math.round((raw - disc) / 1.1)
-    }
-    if (it.item_code === 'discount') return 0
-    return applyTaxAdjust(it.item_code, raw, taxMode)
-  }
-  const getA = (id: number, m: number) => adjustVal(id, aLookup[id]?.[m] ?? 0, aLookup, m)
-  const getT = (id: number, m: number) => adjustVal(id, tLookup[id]?.[m] ?? 0, tLookup, m)
+  const getA = (id: number, m: number) => aLookup[id]?.[m] ?? 0
+  const getT = (id: number, m: number) => tLookup[id]?.[m] ?? 0
   const prevMonth = month === 4 ? 3 : month - 1
   // Twinkle代は管理費として独立計上するためカテゴリ合計から除外(二重控除防止)
-  // 税抜モード時は adjustVal で各項目を税抜換算
   const catTotal = (cat: string, lk: typeof aLookup, m: number) =>
-    (expenseGroups[cat] ?? []).filter(i => i.item_code !== MGMT_FEE_CODE)
-      .reduce((s, i) => s + adjustVal(i.id, lk[i.id]?.[m] ?? 0, lk, m), 0)
+    (expenseGroups[cat] ?? []).filter(i => i.item_code !== MGMT_FEE_CODE).reduce((s, i) => s + (lk[i.id]?.[m] ?? 0), 0)
   const allExp = (lk: typeof aLookup, m: number) => EXPENSE_CATEGORIES.reduce((s, c) => s + catTotal(c, lk, m), 0)
 
   const tSales = salesItem ? getT(salesItem.id, month) : 0
@@ -112,14 +93,6 @@ export function MonthlyReport() {
             <h1 className="page-title">{MONTH_LABELS[month]}の成績</h1>
           </div>
           <div className="page-subtitle">{fiscalYear}年度 · {store?.name ?? ''}</div>
-        </div>
-        <div className="seg" role="tablist" title="税抜は売上=(税込売上−割引)/1.10、課税経費=÷1.10で表示">
-          <button className="seg-btn" aria-pressed={taxMode === 'inclusive'} onClick={() => setTaxMode('inclusive')}>
-            <span>税込</span><span className="sub">INCL</span>
-          </button>
-          <button className="seg-btn" aria-pressed={taxMode === 'exclusive'} onClick={() => setTaxMode('exclusive')}>
-            <span>税抜</span><span className="sub">EXCL</span>
-          </button>
         </div>
       </div>
       <div className="filter-bar">
