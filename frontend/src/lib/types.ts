@@ -33,6 +33,30 @@ export interface BeautyMonthlyMeta {
 export const EXPENSE_CATEGORIES: ItemCategory[] = ['仕入', '人件費', '法定福利', '固定費', '税金', 'その他']
 export const MGMT_FEE_CODE = 'twinkle_fee'
 
+/** 表示モード: 税込 / 税抜 */
+export type TaxMode = 'inclusive' | 'exclusive'
+
+/** 消費税の対象外として税抜換算しない item_code (税抜モード時に ÷1.10 を適用しない) */
+export const NON_TAXABLE_ITEM_CODES = new Set<string>([
+  // 人件費系(給与・賞与は消費税対象外)
+  'salary_total', 'bonus', 'recruitment', 'training',
+  // 法定福利・社会保険系
+  'legal_welfare', 'health_ins_total', 'workers_comp',
+  // 通勤交通費(一定額まで非課税、実務上ほぼ非課税扱い)
+  'transport_total',
+  // 税金系(預かり税は BS 預り金、減価償却は非現金費用で消費税の話とは別)
+  'withholding_tax', 'vat_purchase', 'net_payable_tax', 'depreciation',
+  // 商店街費等の会費系
+  'shopping_street',
+])
+
+/** 税抜モード時に課税科目を ÷1.10 する。非課税科目はそのまま返す */
+export function applyTaxAdjust(itemCode: string, raw: number, mode: TaxMode): number {
+  if (mode === 'inclusive') return raw
+  if (NON_TAXABLE_ITEM_CODES.has(itemCode)) return raw
+  return raw / 1.1
+}
+
 // Fiscal year months in order
 export const FISCAL_MONTHS = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3] as const
 export const MONTH_LABELS: Record<number, string> = {
