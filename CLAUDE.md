@@ -20,13 +20,27 @@
 
 React + TypeScript + Tailwind + PHP + MySQL
 
-<!-- 以下はプロジェクト固有セクション。必要に応じて記載 -->
-<!--
-## ディレクトリ構成
-## DBスキーマ
-## デプロイ方法
-## コーディングルール
--->
+## beauty_item_master の運用ルール ★必須
+
+UIに表示される項目は `useItemMaster` (`frontend/src/lib/useBeautyData.ts`) で `is_active=eq.1` でフィルタされている。
+
+### 妻向けダッシュボードに出す項目(`is_active=1`)
+- 売上カテゴリ: `sales` / `customers` / `unit_price` の3つだけ
+- 経費カテゴリ: 仕入・人件費・法定福利・固定費・税金・その他 で大まかにまとめた項目
+- 細かい売上内訳(現金日別・カード・電マネ等)は **出さない**
+
+### ちょぼまる連携用の細粒度 item(`is_active=0`)
+- 売上の細かい内訳(`cash_sales_d01_05`、`card_sales_d01_05` 等)はちょぼまるが TKC仕訳のために使う
+- うりぼー UI では非表示(`is_active=0`)、DBにはデータ保持、ちょぼまるからは取得可能
+- ちょぼまる側のクエリは `item_code=like.*sales*` で `is_active` フィルタを使っていないので問題なく読める
+
+### 新規 item を追加する時のルール
+- **デフォルトで `is_active=0` を指定する**
+- 「妻にも見せたい」項目を新設するときだけ `is_active=1` にする
+- 過去事故: 2026-05-22 に 18件の5日単位売上 item が `is_active=1` で投入され、ダッシュボードに「—」行がずらっと表示された
+
+### ちょぼまる側ルール
+`C:/Users/nikon/projects/chobomaru/CLAUDE.md` に同じルールを記載済み(対の関係)。
 
 ---
 
