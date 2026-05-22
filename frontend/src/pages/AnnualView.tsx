@@ -80,11 +80,16 @@ export function AnnualView() {
   function getRowTotal(itemId: number): number {
     return FISCAL_MONTHS.reduce((s, m) => s + getVal(itemId, m), 0)
   }
+  // Twinkle代は管理費として独立計上するため、カテゴリ合計から除外して二重控除を防ぐ
   function getCatTotal(cat: string, month: number): number {
-    return (expenseGroups[cat] ?? []).reduce((s, i) => s + getVal(i.id, month), 0)
+    return (expenseGroups[cat] ?? [])
+      .filter(i => i.item_code !== MGMT_FEE_CODE)
+      .reduce((s, i) => s + getVal(i.id, month), 0)
   }
   function getCmpCatTotal(cat: string, month: number): number {
-    return (expenseGroups[cat] ?? []).reduce((s, i) => s + getCmpVal(i.id, month), 0)
+    return (expenseGroups[cat] ?? [])
+      .filter(i => i.item_code !== MGMT_FEE_CODE)
+      .reduce((s, i) => s + getCmpVal(i.id, month), 0)
   }
   function getExpenseTotal(month: number): number {
     return EXPENSE_CATEGORIES.reduce((s, cat) => s + getCatTotal(cat, month), 0)
@@ -114,12 +119,12 @@ export function AnnualView() {
   const tgtTotalSales = salesItem ? FISCAL_MONTHS.reduce((s, m) => s + (tgtLookup[salesItem.id]?.[m] ?? 0), 0) : 0
   const tgtTotalExp = FISCAL_MONTHS.reduce((s, m) =>
     s + EXPENSE_CATEGORIES.reduce((es, cat) =>
-      es + (expenseGroups[cat] ?? []).reduce((is, i) => is + (tgtLookup[i.id]?.[m] ?? 0), 0), 0), 0)
+      es + (expenseGroups[cat] ?? []).filter(i => i.item_code !== MGMT_FEE_CODE).reduce((is, i) => is + (tgtLookup[i.id]?.[m] ?? 0), 0), 0), 0)
 
   const cmpTotalSales = salesItem ? FISCAL_MONTHS.reduce((s, m) => s + (cmpLookup[salesItem.id]?.[m] ?? 0), 0) : 0
   const cmpTotalExp = FISCAL_MONTHS.reduce((s, m) =>
     s + EXPENSE_CATEGORIES.reduce((es, cat) =>
-      es + (expenseGroups[cat] ?? []).reduce((is, i) => is + (cmpLookup[i.id]?.[m] ?? 0), 0), 0), 0)
+      es + (expenseGroups[cat] ?? []).filter(i => i.item_code !== MGMT_FEE_CODE).reduce((is, i) => is + (cmpLookup[i.id]?.[m] ?? 0), 0), 0), 0)
 
   const compareLabel = compareBase === 'target' ? `目標 ${fiscalYear}年度` : compareBase === 'lastyear' ? `昨対 ${fiscalYear - 1}年度実績` : `見通し ${fiscalYear}年度`
   const hasCmpData = dataType === '実績' && Object.keys(cmpLookup).length > 0

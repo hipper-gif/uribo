@@ -61,7 +61,9 @@ export function QuarterlyView() {
   const getT = (itemId: number, m: number) => tLookup[itemId]?.[m] ?? 0
 
   const qSumItem = (itemId: number, lk: typeof aLookup) => q.months.reduce((s, m) => s + (lk[itemId]?.[m] ?? 0), 0)
-  const qSumCat = (cat: string, lk: typeof aLookup) => (expenseGroups[cat] ?? []).reduce((s, it) => s + qSumItem(it.id, lk), 0)
+  // Twinkle代は管理費として独立計上するためカテゴリ合計から除外(二重控除防止)
+  const qSumCat = (cat: string, lk: typeof aLookup) =>
+    (expenseGroups[cat] ?? []).filter(it => it.item_code !== MGMT_FEE_CODE).reduce((s, it) => s + qSumItem(it.id, lk), 0)
   const qAllExp = (lk: typeof aLookup) => EXPENSE_CATEGORIES.reduce((s, c) => s + qSumCat(c, lk), 0)
 
   const qMgmtFee = (lk: typeof aLookup) => mgmtFeeItem ? qSumItem(mgmtFeeItem.id, lk) : 0
@@ -271,8 +273,8 @@ export function QuarterlyView() {
                       {q.months.map(m => {
                         const aS = salesItem ? getA(salesItem.id, m) : 0
                         const tS = salesItem ? getT(salesItem.id, m) : 0
-                        const aE = EXPENSE_CATEGORIES.reduce((s, c) => s + (expenseGroups[c] ?? []).reduce((ss, it) => ss + getA(it.id, m), 0), 0)
-                        const tE = EXPENSE_CATEGORIES.reduce((s, c) => s + (expenseGroups[c] ?? []).reduce((ss, it) => ss + getT(it.id, m), 0), 0)
+                        const aE = EXPENSE_CATEGORIES.reduce((s, c) => s + (expenseGroups[c] ?? []).filter(it => it.item_code !== MGMT_FEE_CODE).reduce((ss, it) => ss + getA(it.id, m), 0), 0)
+                        const tE = EXPENSE_CATEGORIES.reduce((s, c) => s + (expenseGroups[c] ?? []).filter(it => it.item_code !== MGMT_FEE_CODE).reduce((ss, it) => ss + getT(it.id, m), 0), 0)
                         const aP = aS - aE, tP = tS - tE
                         const r = tP ? aP / tP : 0
                         return (
@@ -311,7 +313,7 @@ export function QuarterlyView() {
                           <td className={`col-label ${qActualProfit < 0 ? 'cell-loss' : ''}`}>純利益</td>
                           {q.months.map(m => {
                             const aS = salesItem ? getA(salesItem.id, m) : 0
-                            const aE = EXPENSE_CATEGORIES.reduce((s, c) => s + (expenseGroups[c] ?? []).reduce((ss, it) => ss + getA(it.id, m), 0), 0)
+                            const aE = EXPENSE_CATEGORIES.reduce((s, c) => s + (expenseGroups[c] ?? []).filter(it => it.item_code !== MGMT_FEE_CODE).reduce((ss, it) => ss + getA(it.id, m), 0), 0)
                             const f = mgmtFeeItem ? getA(mgmtFeeItem.id, m) : 0
                             const np = aS - aE - f
                             return (

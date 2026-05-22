@@ -61,7 +61,9 @@ export function MonthlyReport() {
   const getA = (id: number, m: number) => aLookup[id]?.[m] ?? 0
   const getT = (id: number, m: number) => tLookup[id]?.[m] ?? 0
   const prevMonth = month === 4 ? 3 : month - 1
-  const catTotal = (cat: string, lk: typeof aLookup, m: number) => (expenseGroups[cat] ?? []).reduce((s, i) => s + (lk[i.id]?.[m] ?? 0), 0)
+  // Twinkle代は管理費として独立計上するためカテゴリ合計から除外(二重控除防止)
+  const catTotal = (cat: string, lk: typeof aLookup, m: number) =>
+    (expenseGroups[cat] ?? []).filter(i => i.item_code !== MGMT_FEE_CODE).reduce((s, i) => s + (lk[i.id]?.[m] ?? 0), 0)
   const allExp = (lk: typeof aLookup, m: number) => EXPENSE_CATEGORIES.reduce((s, c) => s + catTotal(c, lk, m), 0)
 
   const tSales = salesItem ? getT(salesItem.id, month) : 0

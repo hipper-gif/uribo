@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useStores, useItemMaster } from '../lib/useBeautyData'
 import { apiGet, apiPost, apiPatch } from '../lib/api'
-import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, currentFiscalYear, formatAmount, formatPercent, formatMan, calcDerivedAmount } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatAmount, formatPercent, formatMan, calcDerivedAmount } from '../lib/types'
 import type { DataType, BeautyMonthlyData, BeautyItemMaster } from '../lib/types'
 
 type FormValues = Record<number, string>
@@ -38,7 +38,6 @@ export function DataEntry() {
 
   const salesItem = useMemo(() => items.find(i => i.item_code === 'sales'), [items])
   const customersItem = useMemo(() => items.find(i => i.item_code === 'customers'), [items])
-  const discountItem = useMemo(() => items.find(i => i.item_code === 'discount'), [items])
 
   // 仕入カテゴリは税抜入力 / DBは税込保存。入力欄⇄DB の変換係数。
   const itemIsTaxExclusive = useCallback((itemId: number) => {
@@ -105,21 +104,27 @@ export function DataEntry() {
   }, [salesItem, customersItem, numVal])
 
   const catTotal = useCallback((cat: string) => {
-    // 派生計算項目（仕入消費税・納付税額など）はカテゴリ合計から除外して二重計上を防ぐ
+    // 派生計算項目（仕入消費税・納付税額など）と Twinkle代(管理費として独立) はカテゴリ合計から除外
     // 仕入カテゴリは税抜入力 → 税込で集計(×1.1)
     const factor = cat === '仕入' ? 1.1 : 1
     return (expenseGroups[cat] ?? [])
-      .filter(i => calcDerivedAmount(i.item_code, codeValues) === null)
+      .filter(i => calcDerivedAmount(i.item_code, codeValues) === null && i.item_code !== MGMT_FEE_CODE)
       .reduce((s, i) => s + numVal(i.id) * factor, 0)
   }, [expenseGroups, numVal, codeValues])
 
-  const totalExp = useMemo(() => {
-    let t = EXPENSE_CATEGORIES.reduce((s, c) => s + catTotal(c), 0)
-    if (discountItem) t += numVal(discountItem.id)
-    return t
-  }, [catTotal, discountItem, numVal])
+  // totalExp: Twinkle代は除外済み(catTotal内でフィルタ)。discount はその他カテゴリで集計済みのため別途加算しない
+  const totalExp = useMemo(() =>
+    EXPENSE_CATEGORIES.reduce((s, c) => s + catTotal(c), 0)
+  , [catTotal])
 
-  const netProfit = useMemo(() => salesItem ? numVal(salesItem.id) - totalExp : 0, [salesItem, numVal, totalExp])
+  const mgmtFee = useMemo(() => {
+    const mi = items.find(i => i.item_code === MGMT_FEE_CODE)
+    return mi ? numVal(mi.id) : 0
+  }, [items, numVal])
+
+  const netProfit = useMemo(() =>
+    salesItem ? numVal(salesItem.id) - totalExp - mgmtFee : 0
+  , [salesItem, numVal, totalExp, mgmtFee])
   const profitRate = useMemo(() => {
     if (!salesItem) return 0
     const s = numVal(salesItem.id)
