@@ -522,11 +522,125 @@ input { font-family: inherit; }
   .ltable th, .ltable td { padding: 0 8px; height: 28px; }
   .ltable th.col-label, .ltable td.col-label { min-width: 120px; }
   .topbar-right .select { display: none; }
+  .topbar-right { display: none; }  /* 印刷ボタン・LIVE pill をスマホで非表示 */
+  .seg-btn .sub { display: none; }  /* 英字サブラベル(ACTUAL/TARGET/INCL等)を非表示 */
   .entry-row { grid-template-columns: 1fr 120px; }
   .entry-row .smallcaps { display: none; }
-  .entry-input { width: 120px; }
-  .savebar { flex-direction: column; gap: 8px; padding: 12px; }
+  .entry-input { width: 120px; min-height: 44px; font-size: 16px; }
+  .savebar { flex-direction: column; gap: 8px; padding: 12px; padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
   .savebar .summary { gap: 12px; }
+  /* タッチターゲット拡大 */
+  .select { min-height: 40px; font-size: 14px; }
+  .seg-btn { min-height: 36px; padding: 6px 14px; font-size: 13px; }
+  .month-btn { min-height: 48px; }
+  /* スマホでナビは非表示(下のボトムタブを使う) */
+  .topbar .nav { display: none; }
+  .topbar { padding: 0 12px; }
+}
+
+/* ── Bottom tab bar (スマホのみ表示) ── */
+.bottom-tabs { display: none; }
+@media (max-width: 1024px) {
+  .bottom-tabs {
+    display: flex;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    background: var(--paper);
+    border-top: 1px solid var(--rule);
+    padding: 6px 4px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom));
+    box-shadow: 0 -2px 8px oklch(0.22 0.015 60 / 0.05);
+  }
+  .bottom-tab {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 6px 4px;
+    border: 0; background: transparent;
+    color: var(--ink-3); cursor: pointer;
+    text-decoration: none;
+    min-height: 48px; justify-content: center;
+  }
+  .bottom-tab .bt-icon { font-size: 18px; line-height: 1; }
+  .bottom-tab .bt-label { font-size: 10px; font-weight: 500; }
+  .bottom-tab.active { color: var(--accent); }
+  .bottom-tab.active .bt-icon { filter: none; }
+  .app { padding-bottom: 64px; } /* ボトムタブ分のスペース */
+}
+
+/* ── This month spotlight (ホーム画面の「今月」強調) ── */
+.this-month-spot {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, var(--paper) 0%, var(--paper-2) 100%);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  margin-bottom: 14px;
+}
+.this-month-spot .tm-label {
+  font-size: 11px; color: var(--ink-3);
+  letter-spacing: 0.04em; text-transform: uppercase;
+  font-family: var(--font-mono);
+  margin-bottom: 4px;
+}
+.this-month-spot .tm-value {
+  font-size: 22px; font-weight: 700; letter-spacing: -0.02em;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+.this-month-spot .tm-sub { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+.this-month-spot .tm-header {
+  grid-column: 1 / -1;
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 4px;
+}
+.this-month-spot .tm-title {
+  font-size: 13px; font-weight: 600; color: var(--ink);
+}
+.this-month-spot .tm-month {
+  font-family: var(--font-mono); font-size: 11px; color: var(--accent);
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  .this-month-spot { grid-template-columns: 1fr; gap: 10px; padding: 14px 16px; }
+  .this-month-spot .tm-value { font-size: 24px; }
+  .this-month-spot .tm-block {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    padding-top: 8px; border-top: 1px solid var(--rule-soft);
+  }
+  .this-month-spot .tm-block:first-of-type { border-top: 0; padding-top: 0; }
+  .this-month-spot .tm-block .tm-label { margin-bottom: 0; }
+  .this-month-spot .tm-block .tm-value { font-size: 20px; }
+}
+
+/* ── Mobile month cards (月次成績のカード化) ── */
+.mobile-month-cards { display: none; }
+.desktop-month-table { display: block; }
+@media (max-width: 640px) {
+  .mobile-month-cards { display: flex; flex-direction: column; gap: 10px; }
+  .desktop-month-table { display: none; }
+  .mcard {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+  }
+  .mcard-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .mcard-title { font-size: 15px; font-weight: 600; }
+  .mcard-q { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
+  .mcard-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 5px 0; font-size: 13px;
+  }
+  .mcard-row.divider { border-top: 1px solid var(--rule-soft); margin-top: 4px; padding-top: 8px; }
+  .mcard-row .lbl { color: var(--ink-3); font-size: 12px; }
+  .mcard-row .val { font-family: var(--font-mono); font-weight: 500; }
+  .mcard-row.emphasis .val { font-size: 16px; font-weight: 700; }
 }
 
 /* ── Helper panel ── */

@@ -116,6 +116,22 @@ export function AnnualView() {
   const totalCust = customersItem ? FISCAL_MONTHS.reduce((s, m) => s + getVal(customersItem.id, m), 0) : 0
   const activeMonths = FISCAL_MONTHS.filter(m => getSalesAmount(m) > 0).length
 
+  // 今月(または最新月)スポットライト用の月を決定
+  const spotlightMonth = useMemo(() => {
+    // 売上データがある月のうち最新月
+    const monthsWithData = FISCAL_MONTHS.filter(m => getSalesAmount(m) > 0)
+    if (monthsWithData.length === 0) return null
+    // 会計年度の月順で並んでいるので最後の要素が最新
+    return monthsWithData[monthsWithData.length - 1]
+  }, [data, salesItem])
+  const smSales = spotlightMonth != null ? getSalesAmount(spotlightMonth) : 0
+  const smExp = spotlightMonth != null ? getExpenseTotal(spotlightMonth) : 0
+  const smMgmt = spotlightMonth != null ? getMgmtFee(spotlightMonth) : 0
+  const smNet = smSales - smExp - smMgmt
+  const smCust = (spotlightMonth != null && customersItem) ? getVal(customersItem.id, spotlightMonth) : 0
+  const smTgtSales = (spotlightMonth != null && salesItem) ? (tgtLookup[salesItem.id]?.[spotlightMonth] ?? 0) : 0
+  const smAch = smTgtSales > 0 ? smSales / smTgtSales : 0
+
   const tgtTotalSales = salesItem ? FISCAL_MONTHS.reduce((s, m) => s + (tgtLookup[salesItem.id]?.[m] ?? 0), 0) : 0
   const tgtTotalExp = FISCAL_MONTHS.reduce((s, m) =>
     s + EXPENSE_CATEGORIES.reduce((es, cat) =>
@@ -190,6 +206,43 @@ export function AnnualView() {
         </div>
       ) : (
         <>
+          {/* 今月スポットライト */}
+          {spotlightMonth != null && dataType === '実績' && (
+            <div className="this-month-spot">
+              <div className="tm-header">
+                <span className="tm-title">{MONTH_LABELS[spotlightMonth]}の実績</span>
+                <span className="tm-month">{storeName}</span>
+              </div>
+              <div className="tm-block">
+                <div>
+                  <div className="tm-label">売上</div>
+                  <div className="tm-value">{formatMan(smSales)}</div>
+                </div>
+                {smTgtSales > 0 && (
+                  <span className={`kpi-delta ${smAch >= 1 ? 'pos' : 'neg'}`} style={{ fontSize: 11 }}>
+                    {smAch >= 1 ? '▲' : '▼'} {Math.abs((smAch - 1) * 100).toFixed(1)}%
+                  </span>
+                )}
+              </div>
+              <div className="tm-block">
+                <div>
+                  <div className="tm-label">純利益</div>
+                  <div className={`tm-value ${smNet < 0 ? 'num-neg' : ''}`}>
+                    {smNet < 0 ? '−' : ''}{formatMan(Math.abs(smNet))}
+                  </div>
+                </div>
+                <div className="tm-sub">利益率 {smSales > 0 ? formatPercent(smNet / smSales) : '—'}</div>
+              </div>
+              <div className="tm-block">
+                <div>
+                  <div className="tm-label">客数</div>
+                  <div className="tm-value">{smCust ? smCust.toLocaleString() : '—'}</div>
+                </div>
+                <div className="tm-sub">{smSales && smCust ? `単価 ¥${formatAmount(Math.round(smSales / smCust))}` : '—'}</div>
+              </div>
+            </div>
+          )}
+
           {/* KPI Grid */}
           <div className="kpi-grid">
             <div className="kpi">

@@ -800,7 +800,7 @@ export function TargetSetting() {
                   <div className="helper-field">
                     <label className="helper-label">年間売上目標</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input type="number" className="helper-input" style={{ width: 160 }} value={salesAnnual}
+                      <input type="number" inputMode="decimal" className="helper-input" style={{ width: 160 }} value={salesAnnual}
                         onChange={e => setSalesAnnual(e.target.value)} placeholder="例: 20000000" />
                       <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>円</span>
                     </div>
@@ -815,7 +815,7 @@ export function TargetSetting() {
                   <div className="helper-field">
                     <label className="helper-label">交通費（月額）</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input type="number" className="helper-input" value={transportMonthly}
+                      <input type="number" inputMode="decimal" className="helper-input" value={transportMonthly}
                         onChange={e => setTransportMonthly(e.target.value)} placeholder="30000" />
                       <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>円</span>
                     </div>
@@ -823,7 +823,7 @@ export function TargetSetting() {
                   <div className="helper-field">
                     <label className="helper-label">インセンティブ率</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input type="number" className="helper-input" style={{ width: 70 }} value={incentiveRate}
+                      <input type="number" inputMode="decimal" className="helper-input" style={{ width: 70 }} value={incentiveRate}
                         onChange={e => setIncentiveRate(e.target.value)} step="0.5" />
                       <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>%</span>
                     </div>
@@ -831,7 +831,7 @@ export function TargetSetting() {
                   <div className="helper-field">
                     <label className="helper-label">法定福利率</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input type="number" className="helper-input" style={{ width: 70 }} value={welfareRate}
+                      <input type="number" inputMode="decimal" className="helper-input" style={{ width: 70 }} value={welfareRate}
                         onChange={e => setWelfareRate(e.target.value)} step="0.1" />
                       <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>%</span>
                     </div>
@@ -850,7 +850,7 @@ export function TargetSetting() {
                 <div className="helper-field">
                   <label className="helper-label">年間売上目標</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input type="number" className="helper-input" value={salesAnnual}
+                    <input type="number" inputMode="decimal" className="helper-input" value={salesAnnual}
                       onChange={e => setSalesAnnual(e.target.value)} placeholder="例: 20000000" />
                     <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>円</span>
                   </div>
@@ -921,7 +921,7 @@ export function TargetSetting() {
                                   <td>{emp.employment_type ?? '—'}</td>
                                   <td>{emp.salary_type ?? '月給'}</td>
                                   <td style={{ textAlign: 'right', padding: 0 }}>
-                                    <input type="number" className="helper-input staff-salary-input"
+                                    <input type="number" inputMode="decimal" className="helper-input staff-salary-input"
                                       value={staffSalary[emp.id] ?? ''}
                                       onChange={e => setStaffSalary(prev => ({ ...prev, [emp.id]: e.target.value }))}
                                       placeholder={emp.base_salary != null ? String(emp.base_salary) : '未設定'} />
@@ -930,7 +930,7 @@ export function TargetSetting() {
                                     {isHourly ? (
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
                                         <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>×</span>
-                                        <input type="number" className="helper-input staff-hours-input"
+                                        <input type="number" inputMode="decimal" className="helper-input staff-hours-input"
                                           value={staffHours[emp.id] ?? ''}
                                           onChange={e => setStaffHours(prev => ({ ...prev, [emp.id]: e.target.value }))}
                                           placeholder="h/月" />
@@ -963,7 +963,7 @@ export function TargetSetting() {
                       <div className="helper-field">
                         <label className="helper-label">交通費合計（月額）</label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <input type="number" className="helper-input" value={transportMonthly}
+                          <input type="number" inputMode="decimal" className="helper-input" value={transportMonthly}
                             onChange={e => setTransportMonthly(e.target.value)} placeholder="例: 30000" />
                           <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>円</span>
                         </div>
@@ -971,7 +971,7 @@ export function TargetSetting() {
                       <div className="helper-field">
                         <label className="helper-label">インセンティブ率（売上×率）</label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <input type="number" className="helper-input" style={{ width: 80 }} value={incentiveRate}
+                          <input type="number" inputMode="decimal" className="helper-input" style={{ width: 80 }} value={incentiveRate}
                             onChange={e => setIncentiveRate(e.target.value)} step="0.5" />
                           <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>%</span>
                         </div>
@@ -979,7 +979,7 @@ export function TargetSetting() {
                       <div className="helper-field">
                         <label className="helper-label">法定福利率</label>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <input type="number" className="helper-input" style={{ width: 80 }} value={welfareRate}
+                          <input type="number" inputMode="decimal" className="helper-input" style={{ width: 80 }} value={welfareRate}
                             onChange={e => setWelfareRate(e.target.value)} step="0.1" />
                           <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>%</span>
                         </div>
@@ -1063,7 +1063,7 @@ export function TargetSetting() {
                               <td style={{ color: 'var(--ink-3)', fontSize: 11.5 }}>{item.item_category}</td>
                               <td style={{ padding: 0, textAlign: 'right' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, padding: '0 8px' }}>
-                                  <input type="number" className="helper-input" style={{ width: 72, textAlign: 'right', padding: '3px 6px', fontSize: 12 }}
+                                  <input type="number" inputMode="decimal" className="helper-input" style={{ width: 72, textAlign: 'right', padding: '3px 6px', fontSize: 12 }}
                                     value={rate} onChange={e => setVariableRatios(prev => ({ ...prev, [item.id]: e.target.value }))}
                                     placeholder="—" step="0.1" />
                                   <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>%</span>

@@ -68,6 +68,21 @@ export default function App() {
             <Route path="/tkc-compare" element={<TkcCompare />} />
           </Routes>
         </main>
+        {/* スマホ用ボトムタブ(主要4タブ) */}
+        <nav className="bottom-tabs">
+          {[
+            { to: '/', label: '年間', icon: '📊' },
+            { to: '/monthly', label: '月次', icon: '📅' },
+            { to: '/entry', label: '入力', icon: '✏️' },
+            { to: '/payroll', label: '給与', icon: '💴' },
+          ].map(n => (
+            <NavLink key={n.to} to={n.to} end={n.to === '/'}
+              className={({ isActive }) => `bottom-tab${isActive ? ' active' : ''}`}>
+              <span className="bt-icon">{n.icon}</span>
+              <span className="bt-label">{n.label}</span>
+            </NavLink>
+          ))}
+        </nav>
       </div>
     </BrowserRouter>
   )

@@ -249,7 +249,7 @@ export function DataEntry() {
                           return item.item_code === 'customers' ? v.toLocaleString() : formatMan(v)
                         })()}
                       </span>
-                      <input type="number" value={values[item.id] ?? ''} onChange={e => setValue(item.id, e.target.value)}
+                      <input type="number" inputMode="numeric" pattern="[0-9]*" value={values[item.id] ?? ''} onChange={e => setValue(item.id, e.target.value)}
                         placeholder="0" className="entry-input tnum" />
                     </div>
                   ) : (
@@ -328,7 +328,7 @@ export function DataEntry() {
                               return formatMan(item.item_category === '仕入' ? v / 1.1 : v)
                             })()}
                           </span>
-                          <input type="number" value={values[item.id] ?? ''} onChange={e => setValue(item.id, e.target.value)}
+                          <input type="number" inputMode="numeric" pattern="[0-9]*" value={values[item.id] ?? ''} onChange={e => setValue(item.id, e.target.value)}
                             placeholder="0" className="entry-input tnum" />
                         </div>
                       )

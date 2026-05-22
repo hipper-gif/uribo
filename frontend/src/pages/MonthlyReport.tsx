@@ -151,7 +151,85 @@ export function MonthlyReport() {
             </div>
           </div>
 
-          <div className="split">
+          {/* スマホ用カード表示 (640px 以下で表示) */}
+          <div className="mobile-month-cards">
+            <div className="mcard">
+              <div className="mcard-head">
+                <span className="mcard-title">{MONTH_LABELS[month]}サマリー</span>
+                <span className="mcard-q">{store?.name ?? '全店舗'}</span>
+              </div>
+              <div className="mcard-row emphasis">
+                <span className="lbl">売上</span>
+                <span className="val">{formatMan(aSales)}円</span>
+              </div>
+              <div className="mcard-row">
+                <span className="lbl">客数 / 客単価</span>
+                <span className="val">{aCust ? aCust.toLocaleString() : '—'}名 / ¥{aUnit ? Math.round(aUnit).toLocaleString() : '—'}</span>
+              </div>
+              <div className="mcard-row">
+                <span className="lbl">支出合計</span>
+                <span className="val">{formatMan(aExp)}円</span>
+              </div>
+              <div className="mcard-row divider">
+                <span className="lbl">営業利益</span>
+                <span className={`val ${aOpProfit < 0 ? 'num-neg' : ''}`}>{aOpProfit < 0 ? '−' : ''}{formatMan(Math.abs(aOpProfit))}円</span>
+              </div>
+              {aMgmt > 0 && (
+                <>
+                  <div className="mcard-row" style={{ paddingLeft: 12, color: 'var(--ink-3)' }}>
+                    <span className="lbl">Twinkle代</span>
+                    <span className="val" style={{ color: 'var(--ink-3)' }}>−{formatMan(aMgmt)}円</span>
+                  </div>
+                  <div className="mcard-row emphasis">
+                    <span className="lbl">純利益</span>
+                    <span className={`val ${aProfit < 0 ? 'num-neg' : 'num-pos'}`}>{aProfit < 0 ? '−' : ''}{formatMan(Math.abs(aProfit))}円</span>
+                  </div>
+                </>
+              )}
+              <div className="mcard-row">
+                <span className="lbl">利益率</span>
+                <span className="val">{aSales ? formatPercent((aMgmt > 0 ? aProfit : aOpProfit) / aSales) : '—'}</span>
+              </div>
+            </div>
+            {/* カテゴリ別カード */}
+            {EXPENSE_CATEGORIES.map(cat => {
+              const ci = expenseGroups[cat]; if (!ci || !ci.length) return null
+              const t = catTotal(cat, tLookup, month), a = catTotal(cat, aLookup, month), p = catTotal(cat, aLookup, prevMonth)
+              const ach = t ? a/t : 0, mom = p ? a/p : 0
+              if (a === 0 && t === 0) return null
+              return (
+                <div key={cat} className="mcard">
+                  <div className="mcard-head">
+                    <span className="mcard-title">{cat}</span>
+                    <span className="mcard-q">{a ? formatMan(a) : '—'}円</span>
+                  </div>
+                  <div className="mcard-row">
+                    <span className="lbl">目標</span>
+                    <span className="val num-target">{t ? formatMan(t) + '円' : '—'}</span>
+                  </div>
+                  {t > 0 && a > 0 && (
+                    <div className="mcard-row">
+                      <span className="lbl">達成率</span>
+                      <span className={`val ${ach <= 1 ? 'num-pos' : 'num-neg'}`}>{formatPercent(ach)}</span>
+                    </div>
+                  )}
+                  <div className="mcard-row">
+                    <span className="lbl">前月</span>
+                    <span className="val num-dim">{p ? formatMan(p) + '円' : '—'}</span>
+                  </div>
+                  {p > 0 && a > 0 && (
+                    <div className="mcard-row">
+                      <span className="lbl">前月比</span>
+                      <span className={`val ${mom <= 1 ? 'num-pos' : 'num-neg'}`}>{formatPercent(mom)}</span>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* デスクトップ用テーブル表示 */}
+          <div className="split desktop-month-table">
             <div className="card" style={{ padding: 0 }}>
               <div className="card-head">
                 <div className="card-title"><span className="index">DETAIL</span>{MONTH_LABELS[month]}の科目一覧</div>

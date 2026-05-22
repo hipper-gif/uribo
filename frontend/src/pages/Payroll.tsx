@@ -456,7 +456,7 @@ export function Payroll() {
                         <td><b>{e?.name ?? `(emp=${r.employee_id})`}</b></td>
                         <td className="right">
                           {isEdit ? (
-                            <input className="payroll-table-input" type="number" min="0" step="100"
+                            <input className="payroll-table-input" type="number" inputMode="decimal" min="0" step="100"
                               value={String(draft.sales_total ?? r.sales_total)}
                               onChange={ev => setDraft(d => ({ ...d, sales_total: Number(ev.target.value) || 0 }))}
                               style={{ width: 100 }}
@@ -466,7 +466,7 @@ export function Payroll() {
                         <td className="right">{fmtYen(isEdit ? commissionFor(Number(draft.sales_total ?? r.sales_total) || 0, commissionTable) : r.commission_amount)}</td>
                         <td className="right">
                           {isEdit ? (
-                            <input className="payroll-table-input" type="number" min="0"
+                            <input className="payroll-table-input" type="number" inputMode="decimal" min="0"
                               value={String(draft.nomination_count_actual ?? r.nomination_count_actual)}
                               onChange={ev => setDraft(d => ({ ...d, nomination_count_actual: Number(ev.target.value) || 0 }))}
                             />
@@ -479,7 +479,7 @@ export function Payroll() {
                         <td className="right">{fmtYen(r.position_allowance)}</td>
                         <td className="right">
                           {isEdit ? (
-                            <input className="payroll-table-input" type="number" min="0"
+                            <input className="payroll-table-input" type="number" inputMode="decimal" min="0"
                               value={String(draft.transit_amount ?? r.transit_amount)}
                               onChange={ev => setDraft(d => ({ ...d, transit_amount: Number(ev.target.value) || 0 }))}
                             />
@@ -487,7 +487,7 @@ export function Payroll() {
                         </td>
                         <td className="right">
                           {isEdit ? (
-                            <input className="payroll-table-input" type="number" min="0"
+                            <input className="payroll-table-input" type="number" inputMode="decimal" min="0"
                               value={String(draft.reimbursement ?? r.reimbursement)}
                               onChange={ev => setDraft(d => ({ ...d, reimbursement: Number(ev.target.value) || 0 }))}
                             />
@@ -561,7 +561,7 @@ export function Payroll() {
                     <span className="payroll-row-label">売上</span>
                     <span className="payroll-row-value">
                       {isEdit ? (
-                        <input className="payroll-input" type="number" min="0" step="100"
+                        <input className="payroll-input" type="number" inputMode="decimal" min="0" step="100"
                           value={String(draft.sales_total ?? r.sales_total)}
                           onChange={ev => setDraft(d => ({ ...d, sales_total: Number(ev.target.value) || 0 }))}
                           style={{ width: 110 }}
@@ -577,7 +577,7 @@ export function Payroll() {
                     <span className="payroll-row-label">指名件数</span>
                     <span className="payroll-row-value">
                       {isEdit ? (
-                        <input className="payroll-input" type="number" min="0"
+                        <input className="payroll-input" type="number" inputMode="decimal" min="0"
                           value={String(draft.nomination_count_actual ?? r.nomination_count_actual)}
                           onChange={ev => setDraft(d => ({ ...d, nomination_count_actual: Number(ev.target.value) || 0 }))}
                         />
@@ -605,7 +605,7 @@ export function Payroll() {
                     <span className="payroll-row-label">交通費</span>
                     <span className="payroll-row-value">
                       {isEdit ? (
-                        <input className="payroll-input" type="number" min="0"
+                        <input className="payroll-input" type="number" inputMode="decimal" min="0"
                           value={String(draft.transit_amount ?? r.transit_amount)}
                           onChange={ev => setDraft(d => ({ ...d, transit_amount: Number(ev.target.value) || 0 }))}
                         />
@@ -616,7 +616,7 @@ export function Payroll() {
                     <span className="payroll-row-label">立替金</span>
                     <span className="payroll-row-value">
                       {isEdit ? (
-                        <input className="payroll-input" type="number" min="0"
+                        <input className="payroll-input" type="number" inputMode="decimal" min="0"
                           value={String(draft.reimbursement ?? r.reimbursement)}
                           onChange={ev => setDraft(d => ({ ...d, reimbursement: Number(ev.target.value) || 0 }))}
                         />
@@ -627,7 +627,7 @@ export function Payroll() {
                     <span className="payroll-row-label">有給</span>
                     <span className="payroll-row-value">
                       {isEdit ? (
-                        <input className="payroll-input" type="number" step="0.5" min="0"
+                        <input className="payroll-input" type="number" inputMode="decimal" step="0.5" min="0"
                           value={String(draft.paid_leave_days ?? r.paid_leave_days)}
                           onChange={ev => setDraft(d => ({ ...d, paid_leave_days: ev.target.value }))}
                         />
@@ -638,7 +638,7 @@ export function Payroll() {
                     <span className="payroll-row-label">残業</span>
                     <span className="payroll-row-value">
                       {isEdit ? (
-                        <input className="payroll-input" type="number" step="0.25" min="0"
+                        <input className="payroll-input" type="number" inputMode="decimal" step="0.25" min="0"
                           value={String(draft.overtime_hours ?? r.overtime_hours)}
                           onChange={ev => setDraft(d => ({ ...d, overtime_hours: ev.target.value }))}
                         />
