@@ -250,10 +250,13 @@ export function TkcImport() {
                           <td>
                             {row.drafts.map((d, di) => {
                               const it = d.item_id ? itemById[d.item_id] : null
+                              const targetStore = stores.find(s => s.id === d.store_id)
+                              const crossStore = d.store_id !== row.entry.store_id
                               return (
                                 <div key={di} style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '2px 0' }}>
                                   <span style={{ fontSize: 12, minWidth: 120 }}>
                                     {it ? `${it.item_code} (${it.item_name})` : <span style={{ color: 'var(--negative)' }}>{d.item_code} 未登録</span>}
+                                    {crossStore && targetStore && <span className="chip" style={{ marginLeft: 4, fontSize: 9 }}>→{targetStore.name}</span>}
                                   </span>
                                 </div>
                               )
@@ -282,9 +285,17 @@ export function TkcImport() {
                             {rule?.note && <div style={{ marginBottom: 4 }}>{rule.note}</div>}
                             {row.entry.tkc_code === '6117' && (() => {
                               const bd = classifyOutsourcingBreakdown(row.entry)
+                              const KAIGO = 40000
+                              const perStore = Math.max(0, bd.twinkle - KAIGO) / 2
                               return (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                  <div>Twinkle代相当: <b className="tnum">{formatAmount(bd.twinkle)}</b> <span style={{ color: 'var(--positive)' }}>(別計上)</span></div>
+                                  <div>Twinkle代(美容部門): <b className="tnum">{formatAmount(bd.twinkle)}</b></div>
+                                  {bd.twinkle > 0 && (
+                                    <div style={{ paddingLeft: 8, color: 'var(--ink-3)' }}>
+                                      − {formatAmount(KAIGO)}(介護按分) = <b className="tnum">{formatAmount(bd.twinkle - KAIGO)}</b><br />
+                                      ÷ 2店舗 = <b className="tnum">{formatAmount(Math.round(perStore))}</b>/店舗 → twinkle_fee
+                                    </div>
+                                  )}
                                   <div>和田委託費相当: <b className="tnum">{formatAmount(bd.wada)}</b> <span style={{ color: 'var(--positive)' }}>(給与に含)</span></div>
                                   <div>その他真の外注: <b className="tnum">{formatAmount(bd.other)}</b> → outsourcing</div>
                                 </div>

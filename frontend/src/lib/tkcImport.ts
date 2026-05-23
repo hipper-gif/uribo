@@ -57,7 +57,7 @@ export const TKC_RULES: Record<string, TkcMappingRule & { name: string }> = {
   '6112': { name: '旅費交通費', uribo_codes: ['travel_expense'] },
   '6113': { name: '広告宣伝費', uribo_codes: ['hpb', 'advertising'], primary: 'advertising', note: 'HPB既存値を維持、残額を advertising へ' },
   '6116': { name: '採用教育費', uribo_codes: ['training', 'recruitment'], primary: 'recruitment' },
-  '6117': { name: '外注費', uribo_codes: ['outsourcing'], note: '★Twinkle代水増し+和田委託費が混入。明細を要確認' },
+  '6117': { name: '外注費', uribo_codes: ['outsourcing'], note: '★Twinkle代(介護按分前)+和田委託費が混入。Twinkle代は(TKC-40,000)÷2を各店舗twinkle_feeへ' },
   '6118': { name: 'ロイヤルティ', uribo_codes: ['franchise_fee'] },
   '6212': { name: '従業員給与', uribo_codes: ['salary_total'] },
   '6214': { name: '減価償却費', uribo_codes: ['depreciation'] },
@@ -268,10 +268,34 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
     return drafts
   }
 
-  // 6117 外注費 特別処理: 内訳を取引先・摘要で分類し、真の外注のみ outsourcing へ
+  // 6117 外注費 特別処理:
+  //  Twinkle代: (合計 − 40,000介護按分) ÷2 を各店舗 twinkle_fee へ。
+  //  和田委託費: うりぼー側はsalary_totalに含むため無視。
+  //  その他: outsourcing へ。
   if (entry.tkc_code === '6117') {
     const bd = classifyOutsourcingBreakdown(entry)
     drafts.find(d => d.item_code === 'outsourcing')!.amount = bd.other
+
+    // Twinkle代を両店舗の twinkle_fee に按分 (TKCは寝屋川店に全額計上される前提)
+    if (bd.twinkle > 0) {
+      const KAIGO_DEDUCT = 40000
+      const perStoreTwinkle = Math.max(0, bd.twinkle - KAIGO_DEDUCT) / 2
+      const twinkleItem = itemByCode['twinkle_fee']
+      if (twinkleItem) {
+        for (const targetStoreId of [1, 2]) {
+          const ex = existingByStoreItem[`${targetStoreId}|${twinkleItem.id}`]
+          drafts.push({
+            tkc_code: '6117',
+            store_id: targetStoreId,
+            item_code: 'twinkle_fee',
+            item_id: twinkleItem.id,
+            amount: Math.round(perStoreTwinkle),
+            existing_amount: ex?.amount ?? null,
+            existing_row_id: ex?.id ?? null,
+          })
+        }
+      }
+    }
     return drafts
   }
 
