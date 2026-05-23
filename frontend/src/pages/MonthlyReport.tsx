@@ -26,10 +26,10 @@ export function MonthlyReport() {
     return groups
   }, [displayItems])
 
-  // 税金カテゴリの派生表示用 (預かり税は is_calculated=1 だが DB に値があり、
+  // 法定費用カテゴリの派生表示用 (預かり税は is_calculated=1 だが DB に値があり、
   // 仕入消費税・納付税額は計算で出す。集計には加えない参考行として表示)
   const taxRefItems = useMemo(() =>
-    items.filter(i => i.item_category === '税金' && i.is_calculated === 1).sort((a, b) => a.sort_order - b.sort_order),
+    items.filter(i => i.item_category === '法定費用' && i.is_calculated === 1).sort((a, b) => a.sort_order - b.sort_order),
     [items])
 
   const aLookup = useMemo(() => {
@@ -291,7 +291,7 @@ export function MonthlyReport() {
                             )
                           })}
                           {/* 税金カテゴリの場合、預かり税・仕入消費税・納付税額を参考行として追加 */}
-                          {isOpen && cat === '税金' && taxRefItems.map(item => {
+                          {isOpen && cat === '法定費用' && taxRefItems.map(item => {
                             const ia = itemValueAt(item, aLookup, month)
                             const ip = itemValueAt(item, aLookup, prevMonth)
                             const it = itemValueAt(item, tLookup, month)

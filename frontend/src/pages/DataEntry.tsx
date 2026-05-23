@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useStores, useItemMaster } from '../lib/useBeautyData'
 import { apiGet, apiPost, apiPatch } from '../lib/api'
-import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatAmount, formatPercent, formatMan, calcDerivedAmount } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, TAX_EXCLUSIVE_INPUT_CODES, COPY_PREV_CATEGORIES, currentFiscalYear, formatAmount, formatPercent, formatMan, calcDerivedAmount } from '../lib/types'
 import type { DataType, BeautyMonthlyData, BeautyItemMaster } from '../lib/types'
 
 type FormValues = Record<number, string>
@@ -39,10 +39,10 @@ export function DataEntry() {
   const salesItem = useMemo(() => items.find(i => i.item_code === 'sales'), [items])
   const customersItem = useMemo(() => items.find(i => i.item_code === 'customers'), [items])
 
-  // 仕入カテゴリは税抜入力 / DBは税込保存。入力欄⇄DB の変換係数。
+  // cogs/supplies は税抜入力 / DBは税込保存(受領レシートが税抜のため)
   const itemIsTaxExclusive = useCallback((itemId: number) => {
     const it = items.find(i => i.id === itemId)
-    return it?.item_category === '仕入'
+    return TAX_EXCLUSIVE_INPUT_CODES.has(it?.item_code ?? '')
   }, [items])
 
   const loadData = useCallback(async () => {
@@ -65,7 +65,7 @@ export function DataEntry() {
         ? String(Math.round(parseFloat(d.amount) / 1.1))
         : d.amount
     }
-    const fixedItems = items.filter(i => i.item_category === '固定費')
+    const fixedItems = items.filter(i => COPY_PREV_CATEGORIES.has(i.item_category))
     for (const item of fixedItems) {
       if (!newValues[item.id]) {
         const pv = prevData.find(d => d.item_id === item.id)
@@ -92,7 +92,7 @@ export function DataEntry() {
     const out: Record<string, number> = {}
     for (const it of items) {
       const raw = numVal(it.id)
-      out[it.item_code] = it.item_category === '仕入' ? raw * 1.1 : raw
+      out[it.item_code] = TAX_EXCLUSIVE_INPUT_CODES.has(it.item_code) ? raw * 1.1 : raw
     }
     return out
   }, [items, numVal])
@@ -104,12 +104,11 @@ export function DataEntry() {
   }, [salesItem, customersItem, numVal])
 
   const catTotal = useCallback((cat: string) => {
-    // 派生計算項目（仕入消費税・納付税額など）と Twinkle代(管理費として独立) はカテゴリ合計から除外
-    // 仕入カテゴリは税抜入力 → 税込で集計(×1.1)
-    const factor = cat === '仕入' ? 1.1 : 1
+    // 派生計算項目(仕入消費税・納付税額など)と Twinkle代(管理費として独立) はカテゴリ合計から除外
+    // TAX_EXCLUSIVE_INPUT_CODES に該当する item(cogs/supplies)のみ×1.10で税込集計
     return (expenseGroups[cat] ?? [])
       .filter(i => calcDerivedAmount(i.item_code, codeValues) === null && i.item_code !== MGMT_FEE_CODE)
-      .reduce((s, i) => s + numVal(i.id) * factor, 0)
+      .reduce((s, i) => s + numVal(i.id) * (TAX_EXCLUSIVE_INPUT_CODES.has(i.item_code) ? 1.1 : 1), 0)
   }, [expenseGroups, numVal, codeValues])
 
   // totalExp: Twinkle代は除外済み(catTotal内でフィルタ)。discount はその他カテゴリで集計済みのため別途加算しない
@@ -133,7 +132,7 @@ export function DataEntry() {
 
   const copyPrevFixed = useCallback(() => {
     const newVals: FormValues = { ...values }
-    for (const item of items.filter(i => i.item_category === '固定費')) {
+    for (const item of items.filter(i => COPY_PREV_CATEGORIES.has(i.item_category))) {
       const pv = prevMonthData.find(d => d.item_id === item.id)
       if (pv) newVals[item.id] = pv.amount
     }
@@ -286,11 +285,11 @@ export function DataEntry() {
                     <div className="card-title">
                       <span className="index">{String(idx + 2).padStart(2, '0')}</span>{cat}
                       <span className="chip" style={{ marginLeft: 8, fontSize: 10, fontWeight: 500 }}>
-                        {cat === '仕入' ? '税抜入力 / 税込で集計' : '税込入力'}
+                        {cat === '変動費' ? '税抜・税込混在(item毎)' : '税込入力'}
                       </span>
                     </div>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                      {cat === '固定費' && (
+                      {COPY_PREV_CATEGORIES.has(cat) && (
                         <button className="btn btn-ghost" onClick={copyPrevFixed}>
                           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="5" y="5" width="8" height="8" rx="1"/><path d="M3 11V3h8"/></svg>
                           前月をコピー
@@ -325,7 +324,7 @@ export function DataEntry() {
                               if (!pv) return '—'
                               const v = parseFloat(pv.amount)
                               // 仕入カテゴリは DB(税込) を税抜表示に揃える
-                              return formatMan(item.item_category === '仕入' ? v / 1.1 : v)
+                              return formatMan(TAX_EXCLUSIVE_INPUT_CODES.has(item.item_code) ? v / 1.1 : v)
                             })()}
                           </span>
                           <input type="number" inputMode="numeric" pattern="[0-9]*" value={values[item.id] ?? ''} onChange={e => setValue(item.id, e.target.value)}

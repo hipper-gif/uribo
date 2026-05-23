@@ -1,4 +1,14 @@
-export type ItemCategory = '売上' | '仕入' | '人件費' | '法定福利' | '固定費' | '税金' | 'その他'
+export type ItemCategory =
+  | '売上'
+  | '変動費'      // 売上連動: cogs, supplies, fees, hpb
+  | '人件費'      // 給料系: salary_total, bonus, recruitment, training, welfare, commute_allowance, transport_total
+  | '法定費用'    // 強制(削減不可): legal_welfare, workers_comp, 税金系
+  | '契約固定費'  // 月額固定・契約縛り: rent, franchise_fee, depreciation, insurance, shopping_street
+  | 'インフラ'    // 使用量で半変動: electricity, gas, water_utility, communication, garbage
+  | 'サブスク'    // 月額固定・解約容易: microsoft, spotify, amazon_prime, water_supply
+  | 'スポット費用' // 不定期: travel_expense, repair, entertainment, meeting, advertising, outsourcing
+  | '管理費'      // 本部按分: twinkle_fee
+  | 'その他'      // discount, other_expense
 export type DataType = '実績' | '目標' | '見通し'
 
 export interface BeautyStore {
@@ -30,8 +40,24 @@ export interface BeautyMonthlyMeta {
   parttime_count: number | null
 }
 
-export const EXPENSE_CATEGORIES: ItemCategory[] = ['仕入', '人件費', '法定福利', '固定費', '税金', 'その他']
+export const EXPENSE_CATEGORIES: ItemCategory[] = [
+  '変動費', '人件費', '法定費用', '契約固定費', 'インフラ', 'サブスク', 'スポット費用', '管理費', 'その他'
+]
 export const MGMT_FEE_CODE = 'twinkle_fee'
+
+/** 税抜入力する item(DB保存時に×1.10して税込で保存)。受領レシートが税抜なケース。 */
+export const TAX_EXCLUSIVE_INPUT_CODES = new Set<string>(['cogs', 'supplies'])
+
+/** DataEntry「前月をコピー」対象カテゴリ(月額がほぼ固定で前月と同じ可能性高) */
+export const COPY_PREV_CATEGORIES = new Set<ItemCategory>(['契約固定費', 'サブスク', '管理費'])
+
+/** TargetSetting「固定費(前年コピー)」対象カテゴリ。売上に連動しない経費全般 */
+export const TARGET_FIXED_COPY_CATEGORIES = new Set<ItemCategory>([
+  '契約固定費', 'インフラ', 'サブスク', 'スポット費用', '管理費'
+])
+
+/** TargetSetting「変動費(売上連動比率)」対象カテゴリ */
+export const TARGET_VARIABLE_CATEGORIES = new Set<ItemCategory>(['変動費'])
 
 /** 表示モード: 税込 / 税抜 */
 export type TaxMode = 'inclusive' | 'exclusive'

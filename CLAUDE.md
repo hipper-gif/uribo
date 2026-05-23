@@ -26,8 +26,29 @@ UIに表示される項目は `useItemMaster` (`frontend/src/lib/useBeautyData.t
 
 ### 妻向けダッシュボードに出す項目(`is_active=1`)
 - 売上カテゴリ: `sales` / `customers` / `unit_price` の3つだけ
-- 経費カテゴリ: 仕入・人件費・法定福利・固定費・税金・その他 で大まかにまとめた項目
+- 経費は 9区分(下記)で大まかにまとめた項目
 - 細かい売上内訳(現金日別・カード・電マネ等)は **出さない**
+
+### 経費の9区分(2026-05-23確定・経営判断軸)
+
+「テコ入れポイントの可視化」と「目標設定時の予測しやすさ」を両立する分類。
+
+| 区分 | 性質 | 主なitem | 予測ロジック | テコ入れ難度 |
+|------|------|---------|------------|------------|
+| **変動費** | 売上連動 | cogs, supplies, fees, hpb | 売上×% | 中 |
+| **人件費** | 半固定・人員計画依存 | salary_total, bonus, recruitment, training, welfare, transport_total, commute_allowance | 人員計画 | 高 |
+| **法定費用** | 強制・削減不可 | legal_welfare, workers_comp, withholding_tax, vat_purchase, net_payable_tax | 自動算定 | 不可 |
+| **契約固定費** | 月額固定・契約縛り | rent, franchise_fee, depreciation, insurance, shopping_street | 確定値 | 低 |
+| **インフラ** | 使用量で半変動 | electricity, gas, water_utility, communication, garbage | 前月±α | 中 |
+| **サブスク** | 月額固定・解約容易 | water_supply, microsoft, spotify, amazon_prime | 確定値 | 高 |
+| **スポット費用** | 不定期発生 | travel_expense, repair, entertainment, meeting, advertising, outsourcing | 年予算÷12 | 中 |
+| **管理費** | 内部按分・固定 | twinkle_fee | 確定値 | 個別 |
+| **その他** | 残り | discount, other_expense, 集計派生 | — | — |
+
+### tax-exclusive 入力する item
+
+`TAX_EXCLUSIVE_INPUT_CODES = { 'cogs', 'supplies' }`
+UIでは税抜入力、DBでは×1.10して税込保存。受領レシートが税抜のため。
 
 ### ちょぼまる連携用の細粒度 item(`is_active=0`)
 - 売上の細かい内訳(`cash_sales_d01_05`、`card_sales_d01_05` 等)はちょぼまるが TKC仕訳のために使う

@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useStores, useItemMaster, useMonthlyData, useMonthlyMeta } from '../lib/useBeautyData'
 import { apiGet, apiPost, apiPatch } from '../lib/api'
-import { FISCAL_MONTHS, MONTH_LABELS, currentFiscalYear, formatPercent, formatMan, formatAmount } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, TARGET_FIXED_COPY_CATEGORIES, TARGET_VARIABLE_CATEGORIES, currentFiscalYear, formatPercent, formatMan, formatAmount } from '../lib/types'
 import type { BeautyMonthlyData, BeautyMonthlyMeta, DataType } from '../lib/types'
 import { fetchBeautyStaff, type MnemeEmployee } from '../lib/mnemeApi'
 
@@ -428,7 +428,7 @@ export function TargetSetting() {
 
   async function applyFixedCosts() {
     const prev = await fetchPrevActuals()
-    const fixedItems = items.filter(i => i.item_category === '固定費')
+    const fixedItems = items.filter(i => TARGET_FIXED_COPY_CATEGORIES.has(i.item_category))
     const patches: Record<CellKey, string> = {}
     for (const item of fixedItems) {
       for (const m of FISCAL_MONTHS) {
@@ -440,7 +440,7 @@ export function TargetSetting() {
   }
 
   const variableItems = useMemo(() =>
-    items.filter(i => ['仕入', 'その他'].includes(i.item_category) && !i.is_calculated && i.item_code !== 'twinkle_fee'),
+    items.filter(i => TARGET_VARIABLE_CATEGORIES.has(i.item_category) && !i.is_calculated && i.item_code !== 'twinkle_fee'),
     [items])
 
   async function loadVariableRatios() {
@@ -578,9 +578,9 @@ export function TargetSetting() {
         if (welfareItemObj) allPatches[cellKey(welfareItemObj.id, m)] = String(Math.round(salaryTotal * welRate))
       })
 
-      // 4. 固定費（前年実績コピー）
+      // 4. 固定費（前年実績コピー） — 契約固定費/インフラ/サブスク/スポット費用/管理費
       const prev = await fetchPrevActuals()
-      for (const item of items.filter(i => i.item_category === '固定費')) {
+      for (const item of items.filter(i => TARGET_FIXED_COPY_CATEGORIES.has(i.item_category))) {
         for (const m of FISCAL_MONTHS) {
           const pd = prev.find(d => d.item_id === item.id && d.month === m)
           if (pd && parseFloat(pd.amount) !== 0) allPatches[cellKey(item.id, m)] = String(parseFloat(pd.amount))
