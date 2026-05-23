@@ -36,7 +36,7 @@ UIに表示される項目は `useItemMaster` (`frontend/src/lib/useBeautyData.t
 | 区分 | 性質 | 主なitem | 予測ロジック | テコ入れ難度 |
 |------|------|---------|------------|------------|
 | **変動費** | 売上連動 | cogs, supplies, fees, hpb | 売上×% | 中 |
-| **人件費** | 半固定・人員計画依存 | salary_total, bonus, recruitment, training, welfare, transport_total, commute_allowance | 人員計画 | 高 |
+| **人件費** | 半固定・人員計画依存 | salary_total, bonus, recruitment, training, transport_total, (welfareは非アクティブ予約) | 人員計画 | 高 |
 | **法定費用** | 強制・削減不可 | legal_welfare, workers_comp, withholding_tax, vat_purchase, net_payable_tax | 自動算定 | 不可 |
 | **契約固定費** | 月額固定・契約縛り | rent, franchise_fee, depreciation, insurance, shopping_street | 確定値 | 低 |
 | **インフラ** | 使用量で半変動 | electricity, gas, water_utility, communication, garbage | 前月±α | 中 |
@@ -49,6 +49,13 @@ UIに表示される項目は `useItemMaster` (`frontend/src/lib/useBeautyData.t
 
 `TAX_EXCLUSIVE_INPUT_CODES = { 'cogs', 'supplies' }`
 UIでは税抜入力、DBでは×1.10して税込保存。受領レシートが税抜のため。
+
+### water_supply / welfare の使い分け(重複回避)
+
+- **`water_supply`**「水(ウォーターサーバー)」**= 富士山の天然水(月額)** = TKC 6226福利厚生費の美容部門分。サブスク区分。
+- **`welfare`**「福利厚生費」は **is_active=0 の予約item**。健康診断・社員旅行・贈答品など、将来 water_supply 以外の福利厚生費が発生した時に再有効化する。
+- TKC 6226 → うりぼー `water_supply` にマッピング(welfare は使わない)。
+- 経緯: 2026-05-23 に TKC 6226 対応で welfare を新規追加したが、美容部門の6226は富士山の天然水のみで water_supply と完全に同義だったため welfare を非アクティブ化。
 
 ### ちょぼまる連携用の細粒度 item(`is_active=0`)
 - 売上の細かい内訳(`cash_sales_d01_05`、`card_sales_d01_05` 等)はちょぼまるが TKC仕訳のために使う

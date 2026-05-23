@@ -68,7 +68,7 @@ export const TKC_RULES: Record<string, TkcMappingRule & { name: string }> = {
   '6223': { name: '接待交際費', uribo_codes: ['entertainment'] },
   '6224': { name: '保険料', uribo_codes: ['insurance'] },
   '6225': { name: '備品消耗品費', uribo_codes: ['supplies'] },
-  '6226': { name: '福利厚生費', uribo_codes: ['welfare'] },
+  '6226': { name: '福利厚生費', uribo_codes: ['water_supply'], note: '美容部門の6226はほぼウォーターサーバー(富士山の天然水)のため water_supply に充当' },
   '6227': { name: '支払手数料', uribo_codes: ['fees'] },
   '6228': { name: '会議費', uribo_codes: ['meeting'] },
   '6312': { name: '法定福利費', uribo_codes: ['legal_welfare'], note: '貸方分(預り)も発生するが借方ベースで計上' },
