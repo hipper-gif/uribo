@@ -43,7 +43,7 @@ export const NON_TAXABLE_ITEM_CODES = new Set<string>([
   // 法定福利・社会保険系
   'legal_welfare', 'health_ins_total', 'workers_comp',
   // 通勤交通費(一定額まで非課税、実務上ほぼ非課税扱い)
-  'transport_total', 'commute_allowance',
+  'transport_total',
   // 保険料(損害保険・生命保険は消費税非課税)
   'insurance',
   // 税金系(預かり税は BS 預り金、減価償却は非現金費用で消費税の話とは別)

@@ -7,7 +7,7 @@ const TKC_TO_URIBO: Record<string, { name: string; uribo_codes: string[]; note?:
   '4111': { name: '売上高', uribo_codes: ['sales'], note: 'うりぼーは税込・割引前。比較時に (sales−discount)÷1.10' },
   '5211': { name: '材料仕入高', uribo_codes: ['cogs'], note: 'うりぼーは税込で保存(÷1.10で税抜換算)' },
   '5200': { name: '当期売上原価', uribo_codes: ['cogs'] },
-  '6111': { name: '通勤交通費', uribo_codes: ['commute_allowance'] },
+  '6111': { name: '通勤交通費', uribo_codes: ['transport_total'] },
   '6112': { name: '旅費交通費', uribo_codes: ['travel_expense'] },
   '6113': { name: '広告宣伝費', uribo_codes: ['hpb', 'advertising'] },
   '6116': { name: '採用教育費', uribo_codes: ['training', 'recruitment'] },
