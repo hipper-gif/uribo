@@ -26,8 +26,32 @@ export interface TkcMappingRule {
   skip?: boolean
 }
 
+/** 6117 外注費の内訳判定: 取引先名/摘要から「Twinkle代/和田委託費/その他真の外注」を識別
+ *  Twinkle代/和田はうりぼー側で別計上(twinkle_fee/salary_total)のためインポート対象外
+ */
+export type OutsourcingKind = 'twinkle' | 'wada' | 'other'
+export function classifyOutsourcing(trader: string, memo: string): OutsourcingKind {
+  const s = (trader + ' ' + memo).toLowerCase()
+  // 「テインクル」「ティンクル」「twinkle」「スギハラ」「杉原」「ソウカ」「爽夏」を含むなら Twinkle代
+  if (/テインクル|ティンクル|ﾃｲﾝｸﾙ|twinkle|スギハラ|杉原|ｽｷﾞﾊﾗ|ソウカ|爽夏|ｿｳｶ/i.test(trader + memo)) return 'twinkle'
+  // 「ワダ」「和田」を含むなら和田委託費
+  if (/ワダ|和田|ﾜﾀﾞ|wada/i.test(s)) return 'wada'
+  return 'other'
+}
+
+/** 6117 の集計エントリを Twinkle代/和田/その他で分類した内訳を返す */
+export function classifyOutsourcingBreakdown(entry: AggregatedEntry): { twinkle: number; wada: number; other: number; total: number } {
+  const bd = { twinkle: 0, wada: 0, other: 0, total: 0 }
+  for (const d of entry.details) {
+    const k = classifyOutsourcing(d.trader, d.memo)
+    bd[k] += d.amount
+    bd.total += d.amount
+  }
+  return bd
+}
+
 export const TKC_RULES: Record<string, TkcMappingRule & { name: string }> = {
-  '4111': { name: '売上高', uribo_codes: ['sales'], note: '貸方=売上の集計。うりぼー sales = TKC + 既存discount' },
+  '4111': { name: '売上高', uribo_codes: [], skip: true, note: '売上はSalonBoard取込済のためインポート対象外' },
   '5211': { name: '材料仕入高', uribo_codes: ['cogs'] },
   '6111': { name: '通勤交通費', uribo_codes: ['transport_total'], note: 'Payroll経路で既に入力されている可能性あり' },
   '6112': { name: '旅費交通費', uribo_codes: ['travel_expense'] },
@@ -77,14 +101,18 @@ export interface ParsedJournalRow {
   memo: string
 }
 
+export interface ParsedJournalRowWithTrader extends ParsedJournalRow {
+  trader: string
+}
+
 /** UTF-8 BOM 仕訳帳CSV をパース */
-export function parseJournalCsv(text: string): ParsedJournalRow[] {
+export function parseJournalCsv(text: string): ParsedJournalRowWithTrader[] {
   // BOM除去
   if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1)
   const lines = text.split(/\r?\n/).filter(l => l.length > 0)
   if (lines.length < 2) return []
 
-  const out: ParsedJournalRow[] = []
+  const out: ParsedJournalRowWithTrader[] = []
   for (let i = 1; i < lines.length; i++) {
     const cells = parseCsvLine(lines[i])
     if (cells.length < 49) continue
@@ -105,6 +133,7 @@ export function parseJournalCsv(text: string): ParsedJournalRow[] {
       credit_incl: parseInt(cells[28] || '0', 10) || 0,
       credit_excl: parseInt(cells[30] || '0', 10) || 0,
       memo: cells[33] ?? '',
+      trader: cells[32] ?? '',
     })
   }
   return out
@@ -141,6 +170,8 @@ export interface AggregatedEntry {
   amount_incl: number
   /** 税抜合計(参考表示) */
   amount_excl: number
+  /** 元となった仕訳行(プレビューで内訳表示用) */
+  details: { date: string; trader: string; memo: string; amount: number }[]
 }
 
 /** 仕訳行を美容部門×TKC科目で集計
@@ -148,13 +179,13 @@ export interface AggregatedEntry {
  *  - その他: 借方 が美容部門の行を集計
  *  - 借方/貸方で同じTKCコードが両側に出る場合(法定福利費の還付等)は借方優先
  */
-export function aggregateBeauty(rows: ParsedJournalRow[], month: number): AggregatedEntry[] {
+export function aggregateBeauty(rows: ParsedJournalRowWithTrader[], month: number): AggregatedEntry[] {
   const acc = new Map<string, AggregatedEntry>()
   const ensure = (code: string, name: string, store_id: number, store_name: string) => {
     const key = `${code}|${store_id}`
     let e = acc.get(key)
     if (!e) {
-      e = { tkc_code: code, tkc_name: name, store_id, store_name, month, amount_incl: 0, amount_excl: 0 }
+      e = { tkc_code: code, tkc_name: name, store_id, store_name, month, amount_incl: 0, amount_excl: 0, details: [] }
       acc.set(key, e)
     }
     return e
@@ -167,6 +198,7 @@ export function aggregateBeauty(rows: ParsedJournalRow[], month: number): Aggreg
       const e = ensure(r.debit_code, r.debit_name, debitStore.storeId, debitStore.storeName)
       e.amount_incl += r.debit_incl
       e.amount_excl += r.debit_excl
+      e.details.push({ date: r.date, trader: r.trader ?? '', memo: r.memo, amount: r.debit_incl })
     }
     // 貸方が美容 (主に売上)
     const creditStore = TKC_DEPT_TO_STORE[r.credit_dept]
@@ -174,6 +206,7 @@ export function aggregateBeauty(rows: ParsedJournalRow[], month: number): Aggreg
       const e = ensure(r.credit_code, r.credit_name, creditStore.storeId, creditStore.storeName)
       e.amount_incl += r.credit_incl
       e.amount_excl += r.credit_excl
+      e.details.push({ date: r.date, trader: r.trader ?? '', memo: r.memo, amount: r.credit_incl })
     }
   }
   return Array.from(acc.values()).sort((a, b) => {
@@ -235,11 +268,10 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
     return drafts
   }
 
-  // 6117 外注費 特別処理: Twinkle代13万固定を引いて outsourcing に
+  // 6117 外注費 特別処理: 内訳を取引先・摘要で分類し、真の外注のみ outsourcing へ
   if (entry.tkc_code === '6117') {
-    // 美容部門なら Twinkle代(寝屋川/守口で各65000) を差し引く想定
-    const TWINKLE_PER_STORE = 65000
-    drafts.find(d => d.item_code === 'outsourcing')!.amount = Math.max(0, entry.amount_incl - TWINKLE_PER_STORE)
+    const bd = classifyOutsourcingBreakdown(entry)
+    drafts.find(d => d.item_code === 'outsourcing')!.amount = bd.other
     return drafts
   }
 

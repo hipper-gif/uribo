@@ -4,7 +4,7 @@ import { useStores } from '../lib/useBeautyData'
 import { FISCAL_MONTHS, MONTH_LABELS, currentFiscalYear, formatAmount } from '../lib/types'
 import type { BeautyItemMaster, BeautyMonthlyData, DataType } from '../lib/types'
 import {
-  parseJournalCsv, aggregateBeauty, TKC_RULES, buildDraftAssignments,
+  parseJournalCsv, aggregateBeauty, TKC_RULES, buildDraftAssignments, classifyOutsourcingBreakdown,
   type AggregatedEntry, type AssignmentDraft,
 } from '../lib/tkcImport'
 
@@ -278,8 +278,30 @@ export function TkcImport() {
                           <td className="tnum" style={{ textAlign: 'right', color: Math.abs(diff) > 1 ? 'var(--negative)' : 'var(--positive)', fontSize: 12 }}>
                             {Math.abs(diff) > 1 ? (diff > 0 ? '+' : '') + formatAmount(diff) : '✓'}
                           </td>
-                          <td style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                            {rule?.note}
+                          <td style={{ fontSize: 11, color: 'var(--ink-3)', maxWidth: 280 }}>
+                            {rule?.note && <div style={{ marginBottom: 4 }}>{rule.note}</div>}
+                            {row.entry.tkc_code === '6117' && (() => {
+                              const bd = classifyOutsourcingBreakdown(row.entry)
+                              return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  <div>Twinkle代相当: <b className="tnum">{formatAmount(bd.twinkle)}</b> <span style={{ color: 'var(--positive)' }}>(別計上)</span></div>
+                                  <div>和田委託費相当: <b className="tnum">{formatAmount(bd.wada)}</b> <span style={{ color: 'var(--positive)' }}>(給与に含)</span></div>
+                                  <div>その他真の外注: <b className="tnum">{formatAmount(bd.other)}</b> → outsourcing</div>
+                                </div>
+                              )
+                            })()}
+                            {row.entry.tkc_code !== '6117' && row.entry.details.length > 0 && row.entry.details.length <= 6 && (
+                              <details>
+                                <summary style={{ cursor: 'pointer', fontSize: 10 }}>内訳 {row.entry.details.length}件</summary>
+                                <div style={{ paddingTop: 4 }}>
+                                  {row.entry.details.map((d, di) => (
+                                    <div key={di} style={{ fontSize: 10, lineHeight: 1.3 }}>
+                                      {d.date.slice(5)} {d.trader || d.memo || '—'} <span className="tnum">{formatAmount(d.amount)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            )}
                           </td>
                         </tr>
                       )
