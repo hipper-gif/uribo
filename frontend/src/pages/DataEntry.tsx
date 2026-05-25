@@ -3,6 +3,7 @@ import { useStores, useItemMaster } from '../lib/useBeautyData'
 import { apiGet, apiPost, apiPatch } from '../lib/api'
 import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, TAX_EXCLUSIVE_INPUT_CODES, COPY_PREV_CATEGORIES, currentFiscalYear, formatAmount, formatPercent, formatMan, calcDerivedAmount } from '../lib/types'
 import type { DataType, BeautyMonthlyData, BeautyItemMaster } from '../lib/types'
+import { TkcImport } from './TkcImport'
 
 type FormValues = Record<number, string>
 
@@ -24,6 +25,7 @@ export function DataEntry() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [showTkcImport, setShowTkcImport] = useState(false)
 
   const topItems = useMemo(() =>
     items.filter(i => i.item_category === '売上').sort((a, b) => a.sort_order - b.sort_order), [items])
@@ -214,6 +216,10 @@ export function DataEntry() {
           <div className="page-subtitle">{fiscalYear}年度 · {MONTH_LABELS[month]}のデータを入力</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn btn-ghost" onClick={() => setShowTkcImport(true)} title="TKC仕訳帳CSVから一括取込">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 1v9M4 6l4 4 4-4M2 13h12"/></svg>
+            TKC取込
+          </button>
           <div className="seg" role="tablist">
             {(['実績', '目標', '見通し'] as DataType[]).map(dt => (
               <button key={dt} className="seg-btn" aria-pressed={dataType === dt} onClick={() => setDataType(dt)}>
@@ -432,6 +438,29 @@ export function DataEntry() {
           </button>
         </div>
       </div>
+
+      {/* TKC取込モーダル */}
+      {showTkcImport && (
+        <div className="modal-overlay" onClick={() => setShowTkcImport(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>TKC仕訳帳CSV 取込</h2>
+              <button className="btn btn-ghost" onClick={() => setShowTkcImport(false)} aria-label="閉じる">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 3l10 10M13 3L3 13"/></svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <TkcImport
+                embedded
+                initialFiscalYear={fiscalYear}
+                initialMonth={month}
+                initialDataType={dataType}
+                onComplete={async () => { await loadData() }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

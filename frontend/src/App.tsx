@@ -6,7 +6,6 @@ import { DataEntry } from './pages/DataEntry'
 import { TargetSetting } from './pages/TargetSetting'
 import { Payroll } from './pages/Payroll'
 import { TkcCompare } from './pages/TkcCompare'
-import { TkcImport } from './pages/TkcImport'
 
 const NAV = [
   { to: '/', label: '年間', idx: '01' },
@@ -20,7 +19,6 @@ const NAV = [
 // 管理者専用ナビ(?admin=1 で表示)
 const ADMIN_NAV = [
   { to: '/tkc-compare', label: 'TKC比較', idx: '★' },
-  { to: '/tkc-import', label: 'TKC取込', idx: '⇩' },
 ]
 
 export default function App() {
@@ -68,7 +66,6 @@ export default function App() {
             <Route path="/targets" element={<TargetSetting />} />
             <Route path="/payroll" element={<Payroll />} />
             <Route path="/tkc-compare" element={<TkcCompare />} />
-            <Route path="/tkc-import" element={<TkcImport />} />
           </Routes>
         </main>
         {/* スマホ用ボトムタブ(主要4タブ) */}

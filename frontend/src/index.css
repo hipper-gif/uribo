@@ -755,3 +755,21 @@ input { font-family: inherit; }
   .kpi { padding: 8px !important; }
   .card-head { padding: 6px 10px !important; }
 }
+
+/* モーダル(TKC取込等) */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 24px; overflow-y: auto;
+}
+.modal-content {
+  background: var(--surface, #fff); border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  width: 100%; max-width: 1400px; max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-bottom: 1px solid var(--rule, #e5e5e5);
+}
+.modal-header h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; }

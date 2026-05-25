@@ -19,15 +19,26 @@ interface PreviewRow {
   skipped: boolean
 }
 
-export function TkcImport() {
+interface TkcImportProps {
+  /** 外部から月・年・データ区分を制御したい場合(統合モード用) */
+  initialFiscalYear?: number
+  initialMonth?: number
+  initialDataType?: DataType
+  /** 反映完了後のコールバック(モーダル閉じる等) */
+  onComplete?: () => void
+  /** モーダル統合モードか(ナビ・タイトル等の見た目を変える) */
+  embedded?: boolean
+}
+
+export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, onComplete, embedded }: TkcImportProps = {}) {
   const stores = useStores()
   const [allItems, setAllItems] = useState<BeautyItemMaster[]>([])
   const [csvText, setCsvText] = useState('')
   const [fileName, setFileName] = useState('')
   const [error, setError] = useState('')
-  const [month, setMonth] = useState(4)
-  const [fiscalYear, setFiscalYear] = useState(currentFiscalYear())
-  const [dataType] = useState<DataType>('実績')
+  const [month, setMonth] = useState(initialMonth ?? 4)
+  const [fiscalYear, setFiscalYear] = useState(initialFiscalYear ?? currentFiscalYear())
+  const [dataType] = useState<DataType>(initialDataType ?? '実績')
   const [existingData, setExistingData] = useState<BeautyMonthlyData[]>([])
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([])
   const [executing, setExecuting] = useState(false)
@@ -148,6 +159,7 @@ export function TkcImport() {
       await Promise.all(promises)
       setMessage({ type: 'success', text: `${count}件 反映しました` })
       await reloadExisting()
+      if (onComplete) onComplete()
     } catch (e) {
       setMessage({ type: 'error', text: '反映に失敗: ' + (e as Error).message })
     } finally {
@@ -173,15 +185,17 @@ export function TkcImport() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <div className="page-title-row">
-            <span className="page-index">— ★ / TKC IMPORT</span>
-            <h1 className="page-title">TKCインポート</h1>
+      {!embedded && (
+        <div className="page-head">
+          <div>
+            <div className="page-title-row">
+              <span className="page-index">— ★ / TKC IMPORT</span>
+              <h1 className="page-title">TKCインポート</h1>
+            </div>
+            <div className="page-subtitle">TKC仕訳帳CSVから美容部門(011/012)を抽出してうりぼーに反映</div>
           </div>
-          <div className="page-subtitle">TKC仕訳帳CSVから美容部門(011/012)を抽出してうりぼーに反映</div>
         </div>
-      </div>
+      )}
 
       <div className="filter-bar">
         <select className="select" value={fiscalYear} onChange={e => setFiscalYear(Number(e.target.value))}>
