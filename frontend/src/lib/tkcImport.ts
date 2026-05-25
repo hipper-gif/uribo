@@ -262,13 +262,7 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
     }
   })
 
-  // 単一item: 全額
-  if (codes.length === 1) {
-    drafts[0].amount = entry.amount_incl
-    return drafts
-  }
-
-  // 6117 外注費 特別処理:
+  // 6117 外注費 特別処理(単一item判定より前に行う必要あり):
   //  Twinkle代: (合計 − 40,000介護按分) ÷2 を各店舗 twinkle_fee へ。
   //  和田委託費: うりぼー側はsalary_totalに含むため無視。
   //  その他: outsourcing へ。
@@ -296,6 +290,12 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
         }
       }
     }
+    return drafts
+  }
+
+  // 単一item: 全額(6117より後ろに置くこと)
+  if (codes.length === 1) {
+    drafts[0].amount = entry.amount_incl
     return drafts
   }
 
