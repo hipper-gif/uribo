@@ -55,7 +55,7 @@ export const TKC_RULES: Record<string, TkcMappingRule & { name: string }> = {
   '5211': { name: '材料仕入高', uribo_codes: ['cogs'] },
   '6111': { name: '通勤交通費', uribo_codes: ['transport_total'], note: 'Payroll経路で既に入力されている可能性あり' },
   '6112': { name: '旅費交通費', uribo_codes: ['travel_expense'] },
-  '6113': { name: '広告宣伝費', uribo_codes: ['hpb', 'advertising'], primary: 'advertising', note: 'HPB既存値を維持、残額を advertising へ' },
+  '6113': { name: '広告宣伝費', uribo_codes: ['hpb', 'advertising'], primary: 'advertising', note: 'HPB(月額固定)は既存値維持、HPB以外を advertising へ' },
   '6116': { name: '採用教育費', uribo_codes: ['training', 'recruitment'], primary: 'recruitment' },
   '6117': { name: '外注費', uribo_codes: ['outsourcing'], note: '★Twinkle代(介護按分前)+和田委託費が混入。Twinkle代は(TKC-40,000)÷2を各店舗twinkle_feeへ' },
   '6118': { name: 'ロイヤルティ', uribo_codes: ['franchise_fee'] },

@@ -35,11 +35,11 @@ UIに表示される項目は `useItemMaster` (`frontend/src/lib/useBeautyData.t
 
 | 区分 | 性質 | 主なitem | 予測ロジック | テコ入れ難度 |
 |------|------|---------|------------|------------|
-| **変動費** | 売上連動 | cogs, supplies, fees, hpb | 売上×% | 中 |
+| **変動費** | 売上連動 | cogs, supplies, fees | 売上×% | 中 |
 | **人件費** | 半固定・人員計画依存 | salary_total, bonus, recruitment, training, transport_total, (welfareは非アクティブ予約) | 人員計画 | 高 |
 | **法定費用** | 強制・削減不可 | legal_welfare, workers_comp, withholding_tax, vat_purchase, net_payable_tax | 自動算定 | 不可 |
 | **契約固定費** | 月額固定・契約縛り | rent, franchise_fee, depreciation, insurance, shopping_street | 確定値 | 低 |
-| **インフラ** | 使用量で半変動 | electricity, gas, water_utility, communication, garbage | 前月±α | 中 |
+| **インフラ** | 事業基盤(集客含む) | electricity, gas, water_utility, communication, garbage, **hpb** | 前月±α | 中 |
 | **サブスク** | 月額固定・解約容易 | water_supply, microsoft, spotify, amazon_prime | 確定値 | 高 |
 | **スポット費用** | 不定期発生 | travel_expense, repair, entertainment, meeting, advertising, outsourcing | 年予算÷12 | 中 |
 | **管理費** | 内部按分・固定 | twinkle_fee | 確定値 | 個別 |

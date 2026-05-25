@@ -1,10 +1,10 @@
 export type ItemCategory =
   | '売上'
-  | '変動費'      // 売上連動: cogs, supplies, fees, hpb
+  | '変動費'      // 売上連動: cogs, supplies, fees
   | '人件費'      // 給料系: salary_total, bonus, recruitment, training, welfare, commute_allowance, transport_total
   | '法定費用'    // 強制(削減不可): legal_welfare, workers_comp, 税金系
   | '契約固定費'  // 月額固定・契約縛り: rent, franchise_fee, depreciation, insurance, shopping_street
-  | 'インフラ'    // 使用量で半変動: electricity, gas, water_utility, communication, garbage
+  | 'インフラ'    // 事業基盤(集客含む): electricity, gas, water_utility, communication, garbage, hpb
   | 'サブスク'    // 月額固定・解約容易: microsoft, spotify, amazon_prime, water_supply
   | 'スポット費用' // 不定期: travel_expense, repair, entertainment, meeting, advertising, outsourcing
   | '管理費'      // 本部按分: twinkle_fee
