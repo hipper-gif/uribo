@@ -45,6 +45,29 @@ UIに表示される項目は `useItemMaster` (`frontend/src/lib/useBeautyData.t
 | **管理費** | 内部按分・固定 | twinkle_fee | 確定値 | 個別 |
 | **その他** | 残り | discount, other_expense, 集計派生 | — | — |
 
+### MySQL 認証(twinklemark_nicolio)
+
+| 項目 | 値 |
+|------|-----|
+| ホスト | localhost (SSH先サーバー内) |
+| DB | twinklemark_nicolio |
+| ユーザー | twinklemark_app |
+| パスワード | twinkle2525 |
+
+SSH経由のDDL実行例:
+```bash
+ssh -i ~/.ssh/id_xserver_panel -p 10022 twinklemark@sv16114.xserver.jp \
+  "mysql -u twinklemark_app -ptwinkle2525 twinklemark_nicolio < /tmp/migration.sql"
+```
+
+### ★ENUMカラム事故の教訓 (2026-05-23)
+
+`beauty_item_master.item_category` が **ENUM('売上','仕入','人件費','法定福利','固定費','税金','その他')** で固定されていた。
+新カテゴリ値('変動費'/'契約固定費'/'インフラ'/'サブスク'/'スポット費用'/'管理費'/'法定費用')をAPI経由でUPDATEした時、ENUM対象外のためMySQLが **silent に空文字列で保存**(警告のみ)し、ダッシュボードで項目が消える事故が発生。
+
+対策: `sql/003_item_category_to_varchar.sql` で VARCHAR(20) に型変更済み。
+**新カテゴリ追加・変更は他テーブルでも ENUM 制約をまず確認すること**(`SHOW CREATE TABLE ...`)。
+
 ### tax-exclusive 入力する item
 
 `TAX_EXCLUSIVE_INPUT_CODES = { 'cogs', 'supplies' }`
