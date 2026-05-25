@@ -3,7 +3,7 @@ export type ItemCategory =
   | '変動費'      // 売上連動: cogs, supplies, fees
   | '人件費'      // 給料系: salary_total, bonus, recruitment, training, welfare, commute_allowance, transport_total
   | '法定費用'    // 強制(削減不可): legal_welfare, workers_comp, 税金系
-  | '契約固定費'  // 月額固定・契約縛り: rent, franchise_fee, depreciation, insurance, shopping_street
+  | '契約固定費'  // 月額固定・契約縛り: rent, franchise_fee, insurance, shopping_street (depreciationは非アクティブ)
   | 'インフラ'    // 事業基盤(集客含む): electricity, gas, water_utility, communication, garbage, hpb
   | 'サブスク'    // 月額固定・解約容易: microsoft, spotify, amazon_prime, water_supply
   | 'スポット費用' // 不定期: travel_expense, repair, entertainment, meeting, advertising, outsourcing
@@ -73,6 +73,7 @@ export const NON_TAXABLE_ITEM_CODES = new Set<string>([
   // 保険料(損害保険・生命保険は消費税非課税)
   'insurance',
   // 税金系(預かり税は BS 預り金、減価償却は非現金費用で消費税の話とは別)
+  // ※ depreciation はキャッシュ視点で不要のため is_active=0、保険的に非課税リスト維持
   'withholding_tax', 'vat_purchase', 'net_payable_tax', 'depreciation',
   // 商店街費等の会費系
   'shopping_street',

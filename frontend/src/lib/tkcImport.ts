@@ -60,7 +60,7 @@ export const TKC_RULES: Record<string, TkcMappingRule & { name: string }> = {
   '6117': { name: '外注費', uribo_codes: ['outsourcing'], note: '★Twinkle代(介護按分前)+和田委託費が混入。Twinkle代は(TKC-40,000)÷2を各店舗twinkle_feeへ' },
   '6118': { name: 'ロイヤルティ', uribo_codes: ['franchise_fee'] },
   '6212': { name: '従業員給与', uribo_codes: ['salary_total'] },
-  '6214': { name: '減価償却費', uribo_codes: ['depreciation'] },
+  '6214': { name: '減価償却費', uribo_codes: [], skip: true, note: '非現金費用のためうりぼうではキャッシュ視点で計上しない' },
   '6215': { name: '地代家賃', uribo_codes: ['rent'], note: '寝屋川店は請求124k=家賃121k+水道3k分離。要確認' },
   '6216': { name: '修繕費', uribo_codes: ['repair'] },
   '6218': { name: '通信費', uribo_codes: ['microsoft', 'spotify', 'amazon_prime', 'communication'], primary: 'communication', note: 'サブスク既存値を維持、電話/ネット等を communication へ' },
