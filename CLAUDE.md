@@ -68,6 +68,17 @@ ssh -i ~/.ssh/id_xserver_panel -p 10022 twinklemark@sv16114.xserver.jp \
 対策: `sql/003_item_category_to_varchar.sql` で VARCHAR(20) に型変更済み。
 **新カテゴリ追加・変更は他テーブルでも ENUM 制約をまず確認すること**(`SHOW CREATE TABLE ...`)。
 
+### 預かり税(消費税)の運用方針 ★
+
+会計上は預り金(BS負債)だが、うりぼーは **キャッシュ視点で月次経費として継続計上**する。
+
+- `withholding_tax`(預かり税): is_active=1 / 法定費用カテゴリ / 手入力
+- `vat_purchase`(仕入消費税): 自動計算 `(cogs+supplies)/11`、参考表示のみ・集計加算しない
+- `net_payable_tax`(納付税額): 自動計算 `withholding_tax - vat_purchase`、参考表示のみ・集計加算しない
+- **集計**: `withholding_tax` は法定費用カテゴリの月次合計に算入され、支出合計・純利益から減算される
+- **理由**: 妻ダッシュボードで「手元に残るリアルな金」を見るため。預かり税分は「いずれ国に納める拘束された金」として最初から差し引いて表示
+- **TKC比較時の注意**: TKC側は預かり税を経費にしない(BS処理)ため、TKC比較ページでは差分が出る。これは仕様。
+
 ### tax-exclusive 入力する item
 
 `TAX_EXCLUSIVE_INPUT_CODES = { 'cogs', 'supplies' }`
