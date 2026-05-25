@@ -72,10 +72,13 @@ ssh -i ~/.ssh/id_xserver_panel -p 10022 twinklemark@sv16114.xserver.jp \
 
 会計上は預り金(BS負債)だが、うりぼーは **キャッシュ視点で月次経費として継続計上**する。
 
-- `withholding_tax`(預かり税): **is_calculated=0**(通常項目)/ 法定費用カテゴリ / 手入力。MonthlyReport/AnnualView/QuarterlyView の displayItems に含まれ表示・集計される
-- `vat_purchase`(仕入消費税): is_calculated=1 / 自動計算 `(cogs+supplies)/11` / 法定費用カテゴリの **参考行(展開時のみ表示)**・集計加算しない
-- `net_payable_tax`(納付税額): is_calculated=1 / 自動計算 `withholding_tax - vat_purchase` / 同上 参考行・集計加算しない
-- **集計**: `withholding_tax` は法定費用カテゴリの月次合計に算入され、支出合計・純利益から減算される
+- `withholding_tax`(預かり税): is_calculated=0(通常項目) / 法定費用カテゴリ / **自動計算** `floor((sales−discount)/11) − floor(課税仕入合計/11)` = **実質納付税額**
+  - 値は DataEntry の保存時に自動でDBにセットされる
+  - 「課税仕入合計」 = NON_TAXABLE_ITEM_CODES に含まれない経費の税込合計
+- `vat_purchase`(仕入消費税): is_calculated=1 / 自動計算 `floor(課税仕入合計/11)` / 法定費用カテゴリの **参考行(展開時のみ表示)**・集計加算しない
+- `net_payable_tax`(納付税額): **is_active=0**(廃止) / withholding_tax が既に納付税額のため冗長
+- **集計**: `withholding_tax`(=納付税額) は法定費用カテゴリの月次合計に算入され、支出合計・純利益から減算される
+- これにより「税込で経費計上 + 仕入消費税は控除されない」だった旧仕様の二重計上気味問題が解消、実際のキャッシュアウトに一致する
 - **理由**: 妻ダッシュボードで「手元に残るリアルな金」を見るため。預かり税分は「いずれ国に納める拘束された金」として最初から差し引いて表示
 - **TKC比較時の注意**: TKC側は預かり税を経費にしない(BS処理)ため、TKC比較ページでは差分が出る。これは仕様。
 

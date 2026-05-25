@@ -103,12 +103,18 @@ export function DataEntry() {
     return c > 0 ? Math.round(s / c) : 0
   }, [salesItem, customersItem, numVal])
 
+  // 集計から除外する派生項目(参考表示のみ)
+  const REF_ONLY_CODES = ['vat_purchase', 'net_payable_tax']
   const catTotal = useCallback((cat: string) => {
-    // 派生計算項目(仕入消費税・納付税額など)と Twinkle代(管理費として独立) はカテゴリ合計から除外
-    // TAX_EXCLUSIVE_INPUT_CODES に該当する item(cogs/supplies)のみ×1.10で税込集計
     return (expenseGroups[cat] ?? [])
-      .filter(i => calcDerivedAmount(i.item_code, codeValues) === null && i.item_code !== MGMT_FEE_CODE)
-      .reduce((s, i) => s + numVal(i.id) * (TAX_EXCLUSIVE_INPUT_CODES.has(i.item_code) ? 1.1 : 1), 0)
+      .filter(i => i.item_code !== MGMT_FEE_CODE && !REF_ONLY_CODES.includes(i.item_code))
+      .reduce((s, i) => {
+        const derived = calcDerivedAmount(i.item_code, codeValues)
+        // 派生計算項目(withholding_tax)は計算値を使用、それ以外は入力値×係数
+        const v = derived !== null ? derived : numVal(i.id) * (TAX_EXCLUSIVE_INPUT_CODES.has(i.item_code) ? 1.1 : 1)
+        return s + v
+      }, 0)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expenseGroups, numVal, codeValues])
 
   // totalExp: Twinkle代は除外済み(catTotal内でフィルタ)。discount はその他カテゴリで集計済みのため別途加算しない
@@ -144,10 +150,11 @@ export function DataEntry() {
     setMessage(null)
     try {
       const promises: Promise<unknown>[] = []
+      // 1. 入力値を保存
       for (const [idStr, amount] of Object.entries(values)) {
         const itemId = parseInt(idStr, 10)
         if (!amount && amount !== '0') continue
-        // 仕入カテゴリは入力欄(税抜) → DB(税込) に換算して保存
+        // 仕入(cogs/supplies)は入力欄(税抜) → DB(税込) に換算して保存
         const dbAmount = itemIsTaxExclusive(itemId)
           ? Math.round(parseFloat(amount) * 1.1)
           : parseFloat(amount)
@@ -158,6 +165,22 @@ export function DataEntry() {
           promises.push(apiPost('beauty_monthly_data', { store_id: storeId, fiscal_year: fiscalYear, month, data_type: dataType, item_id: itemId, amount: dbAmount }))
         }
       }
+      // 2. 派生計算項目(withholding_tax 等)を自動セット
+      for (const item of items) {
+        const derived = calcDerivedAmount(item.item_code, codeValues)
+        if (derived === null) continue
+        // unit_price は内部表示のみで item_master に存在するなら保存、なければスキップ
+        if (item.is_active !== 1) continue
+        const existing = existingData.find(d => d.item_id === item.id)
+        const dbAmount = Math.round(derived)
+        if (existing) {
+          if (parseFloat(existing.amount) !== dbAmount) {
+            promises.push(apiPatch('beauty_monthly_data', { id: `eq.${existing.id}` }, { amount: dbAmount }))
+          }
+        } else {
+          promises.push(apiPost('beauty_monthly_data', { store_id: storeId, fiscal_year: fiscalYear, month, data_type: dataType, item_id: item.id, amount: dbAmount }))
+        }
+      }
       await Promise.all(promises)
       setMessage({ type: 'success', text: '保存しました' })
       await loadData()
@@ -166,7 +189,7 @@ export function DataEntry() {
     } finally {
       setSaving(false)
     }
-  }, [values, existingData, storeId, fiscalYear, month, dataType, loadData, itemIsTaxExclusive])
+  }, [values, existingData, storeId, fiscalYear, month, dataType, loadData, itemIsTaxExclusive, items, codeValues])
 
   useEffect(() => {
     if (message) { const t = setTimeout(() => setMessage(null), 3000); return () => clearTimeout(t) }
@@ -302,8 +325,9 @@ export function DataEntry() {
                   <div>
                     {catItems.map((item, i) => {
                       const lastStyle = i === catItems.length - 1 ? { borderBottom: 'none' } : undefined
-                      // 派生項目（仕入消費税・納付税額など）は入力欄ではなく計算結果を表示
-                      const derived = item.is_calculated ? calcDerivedAmount(item.item_code, codeValues) : null
+                      // 派生項目(仕入消費税・納付税額・預かり税)は入力欄ではなく計算結果を表示
+                      // calcDerivedAmount は限定された item_code のみ non-null を返す安全なswitch
+                      const derived = calcDerivedAmount(item.item_code, codeValues)
                       if (derived !== null) {
                         return (
                           <div key={item.id} className="entry-row entry-derived" style={lastStyle}>

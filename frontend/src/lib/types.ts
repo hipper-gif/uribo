@@ -111,6 +111,20 @@ export function formatMan(n: number): string {
   return Math.round(n).toLocaleString('ja-JP')
 }
 
+/** 課税仕入合計を集計(NON_TAXABLE_ITEM_CODES に含まれない経費の税込合計) */
+function sumTaxableInputs(values: Record<string, number>): number {
+  let total = 0
+  for (const [code, val] of Object.entries(values)) {
+    // 売上系・派生計算項目は除外
+    if (code === 'sales' || code === 'discount' || code === 'customers' || code === 'unit_price') continue
+    if (code === 'vat_purchase' || code === 'net_payable_tax' || code === 'withholding_tax') continue
+    if (code === 'total_expense' || code === 'net_profit' || code === 'profit_rate') continue
+    if (NON_TAXABLE_ITEM_CODES.has(code)) continue
+    total += val || 0
+  }
+  return total
+}
+
 /** is_calculated=1 の派生項目の値を、入力済み値から導出する。
  *  対応していない item_code は null を返すので、呼び出し側はそのまま表示しないこと。
  *  values は item_code -> 数値 の lookup。
@@ -126,11 +140,18 @@ export function calcDerivedAmount(
       return c > 0 ? Math.round(v('sales') / c) : 0
     }
     case 'vat_purchase':
-      // 仕入消費税 = (仕入 + 消耗品商品) ÷ 11 (税込10%相当, floor)
-      return Math.floor((v('cogs') + v('supplies')) / 11)
+      // 仕入消費税 = (全課税仕入合計) ÷ 11 (NON_TAXABLE_ITEM_CODES以外、floor)
+      return Math.floor(sumTaxableInputs(values) / 11)
+    case 'withholding_tax': {
+      // 預かり税(=実質の納付税額) = 売上消費税 − 仕入消費税
+      const baseSales = Math.max(0, v('sales') - v('discount'))
+      const salesVat = Math.floor(baseSales / 11)
+      const purchaseVat = Math.floor(sumTaxableInputs(values) / 11)
+      return Math.max(0, salesVat - purchaseVat)
+    }
     case 'net_payable_tax':
-      // 納付税額 = 預かり税 - 仕入消費税
-      return v('withholding_tax') - Math.floor((v('cogs') + v('supplies')) / 11)
+      // 旧仕様の冗長項目。withholding_tax が既に納付税額なので 0 を返す
+      return 0
     default:
       return null
   }
