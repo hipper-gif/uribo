@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
-import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan, calcDerivedAmount } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan, formatAmount, calcDerivedAmount } from '../lib/types'
 
 export function MonthlyReport() {
   const stores = useStores()
@@ -244,17 +244,30 @@ export function MonthlyReport() {
                   </tr></thead>
                   <tbody>
                     {salesItems.map(item => {
-                      const t = getT(item.id, month), a = getA(item.id, month), p = getA(item.id, prevMonth)
+                      const isCust = item.item_code === 'customers'
+                      const isPrimary = item.item_code === 'sales'
+                      const isUnit = item.item_code === 'unit_price'
+                      const salesItem = items.find(i => i.item_code === 'sales')
+                      const custItem = items.find(i => i.item_code === 'customers')
+                      // unit_price は sales/customers から動的計算
+                      const val = (lk: typeof aLookup, m: number): number => {
+                        if (!isUnit) return lk[item.id]?.[m] ?? 0
+                        if (!salesItem || !custItem) return 0
+                        const s = lk[salesItem.id]?.[m] ?? 0
+                        const c = lk[custItem.id]?.[m] ?? 0
+                        return c > 0 ? Math.round(s / c) : 0
+                      }
+                      const t = val(tLookup, month), a = val(aLookup, month), p = val(aLookup, prevMonth)
                       const ach = t ? a/t : 0, mom = p ? a/p : 0
-                      const isCust = item.item_code === 'customers', isPrimary = item.item_code === 'sales'
+                      const fmt = (v: number) => isCust ? v.toLocaleString() : isUnit ? formatAmount(v) : formatMan(v)
                       return (
                         <tr key={item.id} className={isPrimary ? 'emphasis' : ''}>
                           <td className="col-label">{item.item_name}</td>
-                          <td className="num num-target">{t ? (isCust ? t.toLocaleString() : formatMan(t)) : '—'}</td>
-                          <td className="num">{a ? (isCust ? a.toLocaleString() : formatMan(a)) : '—'}</td>
+                          <td className="num num-target">{t ? fmt(t) : '—'}</td>
+                          <td className="num">{a ? fmt(a) : '—'}</td>
                           <td className={`num ${ach >= 1 ? 'num-pos' : ach > 0 ? 'num-neg' : 'num-dim'}`}>{t && a ? formatPercent(ach) : '—'}</td>
                           <td style={{ minWidth: 80 }}>{t && a ? <div className="progress" style={{ width: 70 }}><div className={`fill ${ach >= 1 ? 'pos' : ''}`} style={{ width: `${Math.min(100, ach*100)}%` }}/></div> : '—'}</td>
-                          <td className="num num-dim">{p ? (isCust ? p.toLocaleString() : formatMan(p)) : '—'}</td>
+                          <td className="num num-dim">{p ? fmt(p) : '—'}</td>
                           <td className={`num ${mom >= 1 ? 'num-pos' : mom > 0 ? 'num-neg' : 'num-dim'}`}>{p && a ? formatPercent(mom) : '—'}</td>
                         </tr>
                       )

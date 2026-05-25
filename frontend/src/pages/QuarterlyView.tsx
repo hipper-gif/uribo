@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useStores, useItemMaster, useMonthlyData } from '../lib/useBeautyData'
-import { MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan } from '../lib/types'
+import { MONTH_LABELS, EXPENSE_CATEGORIES, MGMT_FEE_CODE, currentFiscalYear, formatPercent, formatMan, formatAmount } from '../lib/types'
 
 const QUARTERS = [
   { label: 'Q1', months: [4, 5, 6], sub: '4 – 6月' },
@@ -192,25 +192,43 @@ export function QuarterlyView() {
                     {salesItems.map(item => {
                       const isPrimary = item.item_code === 'sales'
                       const isCust = item.item_code === 'customers'
-                      const qT = qSumItem(item.id, tLookup)
-                      const qA = qSumItem(item.id, aLookup)
+                      const isUnit = item.item_code === 'unit_price'
+                      const customersItem = items.find(i => i.item_code === 'customers')
+                      // unit_price は sales/customers から動的計算
+                      const monthVal = (lk: typeof aLookup, m: number): number => {
+                        if (!isUnit) return lk[item.id]?.[m] ?? 0
+                        if (!salesItem || !customersItem) return 0
+                        const s = lk[salesItem.id]?.[m] ?? 0
+                        const c = lk[customersItem.id]?.[m] ?? 0
+                        return c > 0 ? Math.round(s / c) : 0
+                      }
+                      const qSumVal = (lk: typeof aLookup): number => {
+                        if (!isUnit) return qSumItem(item.id, lk)
+                        if (!salesItem || !customersItem) return 0
+                        const s = qSumItem(salesItem.id, lk)
+                        const c = qSumItem(customersItem.id, lk)
+                        return c > 0 ? Math.round(s / c) : 0
+                      }
+                      const qT = qSumVal(tLookup)
+                      const qA = qSumVal(aLookup)
+                      const fmt = (v: number) => isCust ? v.toLocaleString() : isUnit ? formatAmount(v) : formatMan(v)
                       return (
                         <tr key={item.id} className={isPrimary ? 'emphasis' : ''}>
                           <td className="col-label">{item.item_name}</td>
                           {q.months.map(m => {
-                            const t = getT(item.id, m)
-                            const a = getA(item.id, m)
+                            const t = monthVal(tLookup, m)
+                            const a = monthVal(aLookup, m)
                             const r = t ? a / t : 0
                             return (
                               <Fragment key={m}>
-                                <td className="num num-target">{t ? (isCust ? t.toLocaleString() : formatMan(t)) : '—'}</td>
-                                <td className="num">{a ? (isCust ? a.toLocaleString() : formatMan(a)) : <span className="num-dim">—</span>}</td>
+                                <td className="num num-target">{t ? fmt(t) : '—'}</td>
+                                <td className="num">{a ? fmt(a) : <span className="num-dim">—</span>}</td>
                                 <td className={`num ${r >= 1 ? 'num-pos' : r > 0 ? 'num-neg' : 'num-dim'}`}>{t && a ? formatPercent(r) : '—'}</td>
                               </Fragment>
                             )
                           })}
-                          <td className="num tot-col num-target">{qT ? (isCust ? qT.toLocaleString() : formatMan(qT)) : '—'}</td>
-                          <td className="num tot-col">{qA ? (isCust ? qA.toLocaleString() : formatMan(qA)) : '—'}</td>
+                          <td className="num tot-col num-target">{qT ? fmt(qT) : '—'}</td>
+                          <td className="num tot-col">{qA ? fmt(qA) : '—'}</td>
                           <td className={`num tot-col ${qT && qA ? (qA / qT >= 1 ? 'num-pos' : 'num-neg') : 'num-dim'}`}>{qT && qA ? formatPercent(qA / qT) : '—'}</td>
                         </tr>
                       )

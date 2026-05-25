@@ -332,25 +332,43 @@ export function AnnualView() {
                 <tbody>
                   {/* Sales items */}
                   {salesItems.map(item => {
-                    const total = getRowTotal(item.id)
                     const isCust = item.item_code === 'customers'
+                    const isUnit = item.item_code === 'unit_price'
                     const isPrimary = item.item_code === 'sales'
+                    // unit_price は sales/customers から動的計算(DB未保存対応)
+                    const getRowVal = (m: number): number => {
+                      if (!isUnit) return getVal(item.id, m)
+                      if (!salesItem || !customersItem) return 0
+                      const s = getVal(salesItem.id, m)
+                      const c = getVal(customersItem.id, m)
+                      return c > 0 ? Math.round(s / c) : 0
+                    }
+                    const getCmpRowVal = (m: number): number => {
+                      if (!isUnit) return getCmpVal(item.id, m)
+                      if (!salesItem || !customersItem) return 0
+                      const s = getCmpVal(salesItem.id, m)
+                      const c = getCmpVal(customersItem.id, m)
+                      return c > 0 ? Math.round(s / c) : 0
+                    }
+                    const total = isUnit
+                      ? (totalCust > 0 ? Math.round(totalSales / totalCust) : 0)
+                      : getRowTotal(item.id)
                     return (
                       <tr key={item.id} className={isPrimary ? 'emphasis' : ''}>
                         <td className="col-label">{item.item_name}</td>
                         {FISCAL_MONTHS.map(m => {
-                          const v = getVal(item.id, m)
-                          const cv = dataType === '実績' ? getCmpVal(item.id, m) : 0
+                          const v = getRowVal(m)
+                          const cv = dataType === '実績' ? getCmpRowVal(m) : 0
                           const ach = v && cv ? v / cv : null
                           return (
                             <td key={m} className="num">
-                              {v ? (isCust ? v.toLocaleString() : formatMan(v)) : <span className="num-dim">—</span>}
+                              {v ? (isCust ? v.toLocaleString() : isUnit ? formatAmount(v) : formatMan(v)) : <span className="num-dim">—</span>}
                               {ach !== null && <span className={`ach ${ach >= 1 ? 'pos' : 'neg'}`}>{formatPercent(ach)}</span>}
                             </td>
                           )
                         })}
-                        <td className="num tot-col">{total ? (isCust ? total.toLocaleString() : formatMan(total)) : '—'}</td>
-                        <td className="num tot-col num-muted">{total ? (isCust ? Math.round(total / 12).toLocaleString() : formatMan(total / 12)) : '—'}</td>
+                        <td className="num tot-col">{total ? (isCust ? total.toLocaleString() : isUnit ? formatAmount(total) : formatMan(total)) : '—'}</td>
+                        <td className="num tot-col num-muted">{total ? (isCust ? Math.round(total / 12).toLocaleString() : isUnit ? formatAmount(total) : formatMan(total / 12)) : '—'}</td>
                       </tr>
                     )
                   })}
