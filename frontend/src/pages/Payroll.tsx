@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { apiGet, apiPatch } from '../lib/api'
+import { apiGet, apiPatch, apiPost } from '../lib/api'
 import { fetchBeautyStaff, type MnemeEmployee } from '../lib/mnemeApi'
 import './Payroll.css'
 
@@ -39,6 +39,16 @@ interface PayrollRow {
   tkc_verified_at: string | null
   status: 'draft' | 'confirmed' | 'tkc_entered'
   notes: string | null
+  holiday_work_count: number
+  holiday_work_allowance: number
+}
+
+interface StoreNote {
+  id: number
+  store_id: number
+  year: number
+  month: number
+  note: string | null
 }
 
 const STORE_LABEL: Record<number, string> = { 1: '寝屋川', 2: '守口' }
@@ -67,6 +77,7 @@ function calcTotal(r: Partial<PayrollRow>): number {
     (Number(r.base_salary) || 0) +
     (Number(r.commission_amount) || 0) +
     (Number(r.nomination_allowance) || 0) +
+    (Number(r.holiday_work_allowance) || 0) +
     (Number(r.position_allowance) || 0) +
     (Number(r.transit_amount) || 0)
   )
@@ -110,6 +121,10 @@ export function Payroll() {
   })
   const [storeFilter, setStoreFilter] = useState<'all' | 1 | 2>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | PayrollRow['status']>('all')
+  // 店舗メモ（店舗×年月）
+  const [storeNotes, setStoreNotes] = useState<Record<number, StoreNote>>({})
+  const [storeNoteDraft, setStoreNoteDraft] = useState<Record<number, string>>({})
+  const [storeNoteSaving, setStoreNoteSaving] = useState<number | null>(null)
 
   function changeView(m: 'card' | 'table') {
     setViewMode(m)
@@ -185,7 +200,7 @@ export function Payroll() {
     setLoading(true)
     setError(null)
     const monthEnd = `${year}-${String(month).padStart(2, '0')}-31`
-    const [{ data, error: e1 }, st, ct] = await Promise.all([
+    const [{ data, error: e1 }, st, ct, sn] = await Promise.all([
       apiGet<PayrollRow[]>('beauty_payroll_monthly', {
         year: `eq.${year}`,
         month: `eq.${month}`,
@@ -196,6 +211,10 @@ export function Payroll() {
         effective_from: `lte.${monthEnd}`,
         order: 'sales_threshold.asc',
       }),
+      apiGet<StoreNote[]>('beauty_payroll_store_note', {
+        year: `eq.${year}`,
+        month: `eq.${month}`,
+      }),
     ])
     if (e1) setError(e1.message)
     setRows(data ?? [])
@@ -203,6 +222,15 @@ export function Payroll() {
     // 月時点で有効な行のみ
     const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
     setCommissionTable((ct.data ?? []).filter(r => r.effective_to === null || r.effective_to >= monthStart))
+    // 店舗メモを store_id でマップ化
+    const noteMap: Record<number, StoreNote> = {}
+    const draftMap: Record<number, string> = {}
+    for (const n of sn.data ?? []) {
+      noteMap[n.store_id] = n
+      draftMap[n.store_id] = n.note ?? ''
+    }
+    setStoreNotes(noteMap)
+    setStoreNoteDraft(draftMap)
     setLoading(false)
   }
 
@@ -211,11 +239,30 @@ export function Payroll() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month])
 
+  async function saveStoreNote(storeId: number) {
+    setStoreNoteSaving(storeId)
+    const note = (storeNoteDraft[storeId] ?? '').trim()
+    const existing = storeNotes[storeId]
+    let e: { message: string } | null = null
+    if (existing) {
+      ;({ error: e } = await apiPatch('beauty_payroll_store_note', { id: `eq.${existing.id}` }, { note }))
+    } else {
+      ;({ error: e } = await apiPost('beauty_payroll_store_note', { store_id: storeId, year, month, note }))
+    }
+    setStoreNoteSaving(null)
+    if (e) {
+      alert('店舗メモ保存失敗: ' + e.message)
+      return
+    }
+    load()
+  }
+
   function startEdit(r: PayrollRow) {
     setEditing(r.id)
     setDraft({
       sales_total: r.sales_total,
       nomination_count_actual: r.nomination_count_actual,
+      holiday_work_count: r.holiday_work_count,
       paid_leave_days: r.paid_leave_days,
       overtime_hours: r.overtime_hours,
       transit_amount: r.transit_amount,
@@ -239,6 +286,9 @@ export function Payroll() {
     const nomActual = Number(draft.nomination_count_actual ?? orig.nomination_count_actual) || 0
     merged.nomination_count_actual = nomActual
     merged.nomination_allowance = nomActual * 500
+    const holidayCount = Number(draft.holiday_work_count ?? orig.holiday_work_count) || 0
+    merged.holiday_work_count = holidayCount
+    merged.holiday_work_allowance = holidayCount * 500
     merged.perfect_attendance_accrual = (Number(draft.perfect_attendance) || 0) ? 5000 : 0
     merged.total_amount = calcTotal(merged)
 
@@ -247,6 +297,8 @@ export function Payroll() {
       commission_amount: merged.commission_amount,
       nomination_count_actual: merged.nomination_count_actual,
       nomination_allowance: merged.nomination_allowance,
+      holiday_work_count: merged.holiday_work_count,
+      holiday_work_allowance: merged.holiday_work_allowance,
       paid_leave_days: merged.paid_leave_days ?? 0,
       overtime_hours: merged.overtime_hours ?? 0,
       transit_amount: Number(merged.transit_amount) || 0,
@@ -423,6 +475,39 @@ export function Payroll() {
             </div>
           </div>
 
+          <div className="payroll-store-notes">
+            {([1, 2] as const)
+              .filter(sid => storeFilter === 'all' || storeFilter === sid)
+              .map(sid => {
+                const current = storeNotes[sid]?.note ?? ''
+                const dirty = (storeNoteDraft[sid] ?? '') !== current
+                return (
+                  <div key={sid} className="payroll-store-note">
+                    <div className="payroll-store-note-head">
+                      <span className="payroll-store-pill">{STORE_LABEL[sid]}</span>
+                      <span className="payroll-store-note-title">店舗メモ（{year}年{month}月）</span>
+                    </div>
+                    <textarea
+                      className="payroll-store-note-input"
+                      placeholder={`${STORE_LABEL[sid]}店の申し送り・特記事項（例: GW繁忙で交代出勤多め）`}
+                      value={storeNoteDraft[sid] ?? ''}
+                      onChange={ev => setStoreNoteDraft(d => ({ ...d, [sid]: ev.target.value }))}
+                    />
+                    <div className="payroll-store-note-actions">
+                      <button
+                        className="payroll-btn-primary"
+                        disabled={!dirty || storeNoteSaving === sid}
+                        onClick={() => saveStoreNote(sid)}
+                        style={{ minHeight: 30, padding: '4px 14px' }}
+                      >
+                        {storeNoteSaving === sid ? '保存中…' : dirty ? 'メモ保存' : '保存済'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+
           {filteredRows.length === 0 ? (
             <div className="payroll-empty">フィルタ条件に該当するスタッフがいません</div>
           ) : viewMode === 'table' ? (
@@ -436,6 +521,8 @@ export function Payroll() {
                     <th className="right">歩合</th>
                     <th className="right">指名</th>
                     <th className="right">指名手当</th>
+                    <th className="right">休日</th>
+                    <th className="right">休日手当</th>
                     <th className="right">基本給</th>
                     <th className="right">役職</th>
                     <th className="right">交通費</th>
@@ -475,6 +562,17 @@ export function Payroll() {
                           )}
                         </td>
                         <td className="right">{fmtYen(isEdit ? (Number(draft.nomination_count_actual ?? r.nomination_count_actual) || 0) * 500 : r.nomination_allowance)}</td>
+                        <td className="right">
+                          {isEdit ? (
+                            <input className="payroll-table-input" type="number" inputMode="decimal" min="0"
+                              value={String(draft.holiday_work_count ?? r.holiday_work_count)}
+                              onChange={ev => setDraft(d => ({ ...d, holiday_work_count: Number(ev.target.value) || 0 }))}
+                            />
+                          ) : (
+                            <>{r.holiday_work_count}回</>
+                          )}
+                        </td>
+                        <td className="right">{fmtYen(isEdit ? (Number(draft.holiday_work_count ?? r.holiday_work_count) || 0) * 500 : r.holiday_work_allowance)}</td>
                         <td className="right">{fmtYen(r.base_salary)}</td>
                         <td className="right">{fmtYen(r.position_allowance)}</td>
                         <td className="right">
@@ -498,6 +596,7 @@ export function Payroll() {
                           sales_total: Number(draft.sales_total ?? r.sales_total) || 0,
                           commission_amount: commissionFor(Number(draft.sales_total ?? r.sales_total) || 0, commissionTable),
                           nomination_allowance: (Number(draft.nomination_count_actual ?? r.nomination_count_actual) || 0) * 500,
+                          holiday_work_allowance: (Number(draft.holiday_work_count ?? r.holiday_work_count) || 0) * 500,
                         }) : r.total_amount)}</td>
                         <td>
                           <span className={`payroll-status-badge payroll-status-${status}`}>
@@ -543,6 +642,7 @@ export function Payroll() {
                     sales_total: editedSales,
                     commission_amount: editedCommission,
                     nomination_allowance: (Number(draft.nomination_count_actual ?? r.nomination_count_actual) || 0) * 500,
+                    holiday_work_allowance: (Number(draft.holiday_work_count ?? r.holiday_work_count) || 0) * 500,
                   })
                 : r.total_amount
               return (
@@ -590,6 +690,25 @@ export function Payroll() {
                     <span className="payroll-row-label">指名手当</span>
                     <span className="payroll-row-value">{fmtYen(isEdit ? (Number(draft.nomination_count_actual ?? r.nomination_count_actual) || 0) * 500 : r.nomination_allowance)}</span>
                   </div>
+                  {(r.holiday_work_count > 0 || isEdit) && (
+                    <div className="payroll-row">
+                      <span className="payroll-row-label">休日交代出勤</span>
+                      <span className="payroll-row-value">
+                        {isEdit ? (
+                          <input className="payroll-input" type="number" inputMode="decimal" min="0"
+                            value={String(draft.holiday_work_count ?? r.holiday_work_count)}
+                            onChange={ev => setDraft(d => ({ ...d, holiday_work_count: Number(ev.target.value) || 0 }))}
+                          />
+                        ) : `${r.holiday_work_count}回`}
+                      </span>
+                    </div>
+                  )}
+                  {(r.holiday_work_count > 0 || isEdit) && (
+                    <div className="payroll-row">
+                      <span className="payroll-row-label">休日出勤手当</span>
+                      <span className="payroll-row-value">{fmtYen(isEdit ? (Number(draft.holiday_work_count ?? r.holiday_work_count) || 0) * 500 : r.holiday_work_allowance)}{isEdit && <span className="payroll-row-sub">×¥500</span>}</span>
+                    </div>
+                  )}
                   <div className="payroll-row">
                     <span className="payroll-row-label">基本給</span>
                     <span className="payroll-row-value">{fmtYen(r.base_salary)}</span>
@@ -656,6 +775,21 @@ export function Payroll() {
                       ) : (r.perfect_attendance ? '◯ 達成' : '—')}
                     </span>
                   </div>
+                  {(isEdit || (r.notes && r.notes.trim())) && (
+                    <div className="payroll-note-block">
+                      <span className="payroll-row-label">メモ（個人）</span>
+                      {isEdit ? (
+                        <textarea
+                          className="payroll-note-input"
+                          placeholder="このスタッフへの申し送り（例: 〇日に早退、来月有給予定）"
+                          value={String(draft.notes ?? '')}
+                          onChange={ev => setDraft(d => ({ ...d, notes: ev.target.value }))}
+                        />
+                      ) : (
+                        <p className="payroll-note-text">{r.notes}</p>
+                      )}
+                    </div>
+                  )}
 
                   <div className="payroll-total">
                     <span className="payroll-total-label">合計</span>
@@ -728,6 +862,8 @@ export function Payroll() {
 
           <div className="payroll-help">
             <p>・指名件数を編集すると、指名手当(×¥500)・合計を自動再計算します</p>
+            <p>・休日交代出勤の回数を入れると、休日出勤手当(×¥500)を合計に自動算入します</p>
+            <p>・編集時に「メモ(個人)」を残せます。店舗単位の申し送りは上部の「店舗メモ」へ</p>
             <p>・パート(時給制)の基本給は¥0表示。時給×勤務時間はTKC側で確定</p>
             <p>・皆勤手当 ¥5,000は積立、月次合計には含めず賞与で精算</p>
             <p>・状態: 草稿(scrape直後) → 確定(爽夏さん確認済) → TKC入力済(杉原さん入力後)</p>

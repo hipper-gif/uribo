@@ -372,9 +372,75 @@
 }
 .payroll-help p { margin: 2px 0; }
 
+/* 店舗メモ（月×店舗） */
+.payroll-store-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.payroll-store-note {
+  flex: 1 1 320px;
+  background: #fffdf5;
+  border: 1px solid #eadfb8;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.payroll-store-note-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.payroll-store-note-title { font-size: 12px; color: #8a7a3a; font-weight: 600; }
+.payroll-store-note-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 56px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid #d8cda0;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  background: #fff;
+}
+.payroll-store-note-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+/* 個人メモ（編集時／閲覧時） */
+.payroll-note-block {
+  margin: 8px 0;
+  padding: 8px 0;
+  border-top: 1px dashed #e0e0e0;
+}
+.payroll-note-block .payroll-row-label { display: block; margin-bottom: 4px; }
+.payroll-note-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 52px;
+  resize: vertical;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.payroll-note-text {
+  margin: 0;
+  font-size: 13px;
+  color: #555;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @media (max-width: 480px) {
   .payroll-page { padding: 8px; }
   .payroll-card { padding: 12px; }
   .payroll-row { font-size: 13px; padding: 5px 0; }
   .payroll-name { font-size: 15px; }
+  .payroll-store-note { flex-basis: 100%; }
 }
