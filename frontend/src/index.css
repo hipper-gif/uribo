@@ -559,10 +559,10 @@ input { font-family: inherit; }
     text-decoration: none;
     min-height: 48px; justify-content: center;
   }
-  .bottom-tab .bt-icon { font-size: 18px; line-height: 1; }
+  .bottom-tab .bt-icon { display: flex; align-items: center; justify-content: center; height: 21px; }
+  .bottom-tab .bt-icon svg { display: block; }
   .bottom-tab .bt-label { font-size: 10px; font-weight: 500; }
   .bottom-tab.active { color: var(--accent); }
-  .bottom-tab.active .bt-icon { filter: none; }
   .app { padding-bottom: 64px; } /* ボトムタブ分のスペース */
 }
 

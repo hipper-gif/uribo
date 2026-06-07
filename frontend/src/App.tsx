@@ -7,6 +7,25 @@ import { TargetSetting } from './pages/TargetSetting'
 import { Payroll } from './pages/Payroll'
 import { TkcCompare } from './pages/TkcCompare'
 
+// ボトムタブ用ラインアイコン(上部の印刷アイコンと同じストローク言語。currentColorでアクティブ色追従)
+const svgProps = {
+  width: 21, height: 21, viewBox: '0 0 20 20', fill: 'none',
+  stroke: 'currentColor', strokeWidth: 1.5,
+  strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
+}
+const BarIcon = () => (
+  <svg {...svgProps}><path d="M3 16.5h14" /><rect x="4.4" y="11" width="2.7" height="5.5" rx="0.7" /><rect x="8.65" y="7.5" width="2.7" height="9" rx="0.7" /><rect x="12.9" y="4" width="2.7" height="12.5" rx="0.7" /></svg>
+)
+const CalendarIcon = () => (
+  <svg {...svgProps}><rect x="3.3" y="4.8" width="13.4" height="11.7" rx="1.6" /><path d="M3.3 8.3h13.4M7 3.2v3M13 3.2v3" /></svg>
+)
+const PencilIcon = () => (
+  <svg {...svgProps}><path d="M13.4 4.4l2.2 2.2-8.3 8.3-2.9.7.7-2.9 8.3-8.3z" /><path d="M11.9 5.9l2.2 2.2" /></svg>
+)
+const YenIcon = () => (
+  <svg {...svgProps}><circle cx="10" cy="10" r="6.6" /><path d="M7.7 6.9l2.3 2.9 2.3-2.9M10 9.8v4.1M7.9 11h4.2M7.9 12.6h4.2" /></svg>
+)
+
 const NAV = [
   { to: '/', label: '年間', idx: '01' },
   { to: '/quarterly', label: '四半期', idx: '02' },
@@ -71,10 +90,10 @@ export default function App() {
         {/* スマホ用ボトムタブ(主要4タブ) */}
         <nav className="bottom-tabs">
           {[
-            { to: '/', label: '年間', icon: '📊' },
-            { to: '/monthly', label: '月次', icon: '📅' },
-            { to: '/entry', label: '入力', icon: '✏️' },
-            { to: '/payroll', label: '給与', icon: '💴' },
+            { to: '/', label: '年間', icon: <BarIcon /> },
+            { to: '/monthly', label: '月次', icon: <CalendarIcon /> },
+            { to: '/entry', label: '入力', icon: <PencilIcon /> },
+            { to: '/payroll', label: '給与', icon: <YenIcon /> },
           ].map(n => (
             <NavLink key={n.to} to={n.to} end={n.to === '/'}
               className={({ isActive }) => `bottom-tab${isActive ? ' active' : ''}`}>
