@@ -31,6 +31,13 @@ try {
         "失敗: 異常終了 (exit=$exit) - CAPTCHAやログイン失敗の可能性。手動で再実行してください: python sync_salonboard.py --with-staff" |
             Tee-Object -FilePath $LogFile -Append
     }
+
+    # --- うりぼう → Mneme 基本給スナップショット同期 (安全網) ---
+    # ランク割当(beauty_employee_grade)変更時は本来その場で sync_grades_to_mneme.py --apply を叩くが、
+    # 反映漏れ防止のため月次バッチでも冪等同期する。salonboard同期の成否に関わらず実行。
+    "--- Mneme基本給同期 ---" | Tee-Object -FilePath $LogFile -Append
+    python sync_grades_to_mneme.py --apply 2>&1 | Tee-Object -FilePath $LogFile -Append
+
     exit $exit
 } catch {
     "例外: $_" | Tee-Object -FilePath $LogFile -Append
