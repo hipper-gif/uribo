@@ -15,7 +15,16 @@
 PDFから抽出する項目:
     TKCコード, 名前, 基本給, 役職手当, 指名報酬, 売上達成金,
     支給合計(gross_total), 差引支給額(net_payment),
-    社会保険料合計(social_insurance_total), 所得税, 住民税
+    社会保険料合計(social_insurance_total), 所得税, 住民税,
+    出勤日数(work_days=「平日・休日出勤」), 労働時間(work_hours=「出勤時間」H:MM)
+
+勤怠・入力ミス検知:
+    出勤日数 or 労働時間が未入力(空欄)のスタッフを警告表示する(全スタッフ対象)。
+    TKC側の入力漏れを処理時に発見するための簡易チェック。
+    ※現状は「入力の有無」のみ。将来 PochiClock 連携で実打刻と突合予定。
+
+--apply 時のPDFアップロードは scp 後にサーバー側でサイズ一致を検証し、
+成否を明示する(失敗は黙ってスキップしない)。
 
 --apply 時のDB反映:
     beauty_payroll_monthly: gross_total, net_payment, social_insurance_total,
@@ -150,6 +159,7 @@ def _parse_by_coords(pdf_path: Path) -> list[dict]:
             "health_insurance": 0, "pension_insurance": 0, "employment_insurance": 0,
             "income_tax": 0, "resident_tax": 0,
             "reimbursement": 0,
+            "work_days": None, "work_hours": None,
         }
 
         # 1. 基本給・役職手当
@@ -199,6 +209,37 @@ def _parse_by_coords(pdf_path: Path) -> list[dict]:
         for x, v in values_at(bw, net_y):
             if _in_range(x, "col_total"):
                 rec["net_payment"] = v
+
+        # 5. 勤怠 (出勤日数=「平日・休日出勤」=小数例21.0 / 労働時間=「出勤時間」=H:MM例168:00)
+        # ラベル直下の col1 位置(x中心 50-100)にある最初の数値を float で採る。
+        def _to_float(text: str) -> float | None:
+            if re.match(r"^-?\d+(\.\d+)?$", text):
+                return float(text)
+            m = re.match(r"^(\d+):(\d{2})$", text)  # H:MM → 時間(float)
+            if m:
+                return int(m.group(1)) + int(m.group(2)) / 60
+            return None
+
+        def first_value_below(label: str, dy_max: float = 18) -> float | None:
+            ly = find_y(bw, label)
+            if ly is None:
+                return None
+            cands = []
+            for w in bw:
+                if ly < w["top"] < ly + dy_max:
+                    val = _to_float(w["text"])
+                    if val is None:
+                        continue
+                    cx = (w["x0"] + w["x1"]) / 2
+                    if 50 <= cx < 100:
+                        cands.append((w["top"], cx, val))
+            if not cands:
+                return None
+            cands.sort()
+            return cands[0][2]
+
+        rec["work_days"] = first_value_below("平日・休日出勤")
+        rec["work_hours"] = first_value_below("出勤時間")
 
         results.append(rec)
     return results
@@ -452,29 +493,59 @@ def upsert_monthly_data(store_id: int, fiscal_year: int, month: int, item_id: in
     return "inserted"
 
 
+REMOTE_PDF_DIR = "~/twinklemark.xsrv.jp/private/payroll_pdfs"
+
+
 def upload_pdf_to_server(local_pdf: Path, year: int, month: int) -> bool:
-    """PDFをサーバの非公開ディレクトリに scp。爽夏さんがUriboから開けるように。"""
+    """PDFをサーバの非公開ディレクトリに scp。爽夏さんがUriboから開けるように。
+
+    失敗は黙ってスキップせず、転送後にサーバー側で実在(サイズ一致)を検証する。
+    成功=True / 失敗・未検証=False を返す。
+    """
     ssh_key = Path(os.path.expanduser("~/.ssh/id_xserver_panel"))
     if not ssh_key.exists():
-        print(f"  [warn] SSH鍵が見つかりません: {ssh_key} - PDFアップロードをスキップ")
+        print(f"  ❌ SSH鍵が見つかりません: {ssh_key}")
+        print("     → これではPDFをサーバーに上げられません(UIで開けない)。鍵を配置して再実行してください")
         return False
     if not shutil.which("scp"):
-        print("  [warn] scp コマンドが見つかりません - PDFアップロードをスキップ")
+        print("  ❌ scp コマンドが見つかりません(OpenSSH未導入?)")
         return False
+
     remote_name = f"{year:04d}-{month:02d}.pdf"
-    remote = f"twinklemark@sv16114.xserver.jp:~/twinklemark.xsrv.jp/private/payroll_pdfs/{remote_name}"
-    cmd = ["scp", "-P", "10022", "-i", str(ssh_key), str(local_pdf), remote]
+    local_size = local_pdf.stat().st_size
+    remote_path = f"{REMOTE_PDF_DIR}/{remote_name}"
+    ssh_base = ["-P", "10022", "-i", str(ssh_key),
+                "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no"]
+
+    scp_cmd = ["scp", *ssh_base, str(local_pdf),
+               f"twinklemark@sv16114.xserver.jp:{remote_path}"]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if r.returncode == 0:
-            print(f"  ✓ PDFアップロード成功: private/payroll_pdfs/{remote_name}")
-            return True
-        else:
-            print(f"  [warn] PDFアップロード失敗 (rc={r.returncode}): {r.stderr[:200]}")
-            return False
+        r = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=90)
     except Exception as e:
-        print(f"  [warn] PDFアップロード例外: {e}")
+        print(f"  ❌ PDFアップロード例外: {e}")
         return False
+    if r.returncode != 0:
+        print(f"  ❌ PDFアップロード失敗 (rc={r.returncode}): {r.stderr.strip()[:300]}")
+        return False
+
+    # --- 転送後検証: サーバー側にファイルが実在し、サイズが一致するか ---
+    # (ssh はポート指定が -P ではなく -p)
+    verify_cmd = ["ssh", "-p", "10022", "-i", str(ssh_key),
+                  "-o", "ConnectTimeout=30", "-o", "StrictHostKeyChecking=no",
+                  "twinklemark@sv16114.xserver.jp",
+                  f"stat -c %s {remote_path} 2>/dev/null"]
+    try:
+        v = subprocess.run(verify_cmd, capture_output=True, text=True, timeout=60)
+        remote_size = int((v.stdout or "0").strip() or 0)
+    except Exception:
+        remote_size = -1
+
+    if remote_size == local_size:
+        print(f"  ✅ PDFアップロード成功・検証OK: private/payroll_pdfs/{remote_name} ({remote_size:,} bytes)")
+        return True
+    print(f"  ❌ アップロード後の検証に失敗: local={local_size:,} / remote={remote_size:,} bytes")
+    print("     → サーバー上のPDFが不完全/不在の可能性。UIで開けないかもしれません")
+    return False
 
 
 def apply_to_db(year: int, month: int, pdf_records: list[dict],
@@ -571,7 +642,16 @@ def apply_to_db(year: int, month: int, pdf_records: list[dict],
     # PDFをサーバーの非公開ディレクトリにアップロード (爽夏さんがUriboで参照できるように)
     if pdf_path is not None:
         print("\n=== PDFサーバーアップロード ===")
-        upload_pdf_to_server(pdf_path, year, month)
+        print(f"  給与月: {year}年{month}月  →  サーバー保存名: {year:04d}-{month:02d}.pdf")
+        print(f"  確認方法: うりぼーで {year}年{month}月 を選び「📄 給与明細PDF」ボタン")
+        ok = upload_pdf_to_server(pdf_path, year, month)
+        print("\n" + ("=" * 56))
+        if ok:
+            print(f"  ✅ 完了: {year}年{month}月分の給与明細PDFをサーバーに保存しました")
+        else:
+            print(f"  ❌ 未完了: {year}年{month}月分のPDFはサーバーに保存されていません")
+            print("     UIの「📄 給与明細PDF」は 404 になります。上のエラーを解消して再実行を。")
+        print("=" * 56)
 
 
 # ---- Comparison -----------------------------------------------------------
@@ -717,6 +797,34 @@ def main():
         print(f"        → 契約書記載と一致するか確認 / DB更新するなら notes に変更理由を記録")
     if drift_count == 0:
         print("  ✓ ドリフト無し（DBの契約情報とPDF実額が一致）")
+
+    # ===== 勤怠・入力ミス検知 (TKC側の入力漏れを処理時に発見する) =====
+    # データ突合ではなく「入力の有無」での異常検知。
+    # 出勤日数=「平日・休日出勤」/ 労働時間=「出勤時間」が空欄(0/未取得)のスタッフを警告。
+    # 将来 PochiClock 連携で実績(打刻)と突合する想定。
+    print(f"\n=== 勤怠・入力ミス検知 (出勤日数/労働時間の未入力) ===")
+    anomalies = []
+    for pdf_rec in pdf_records:
+        problems = []
+        wd, wh = pdf_rec.get("work_days"), pdf_rec.get("work_hours")
+        if not wd:  # None or 0/0.0
+            problems.append("出勤日数=未入力")
+        if not wh:
+            problems.append("労働時間=未入力")
+        if not pdf_rec.get("gross_total"):
+            problems.append("支給合計=0")
+        if problems:
+            anomalies.append((pdf_rec, problems))
+    if not anomalies:
+        print("  ✓ 全員 出勤日数・労働時間とも入力あり")
+    else:
+        for pdf_rec, problems in anomalies:
+            wd, wh = pdf_rec.get("work_days"), pdf_rec.get("work_hours")
+            wd_s = "—" if wd is None else f"{wd:g}日"
+            wh_s = "—" if wh is None else f"{wh:g}h"
+            print(f"  ⚠ {pdf_rec['name']:<14} (tkc={pdf_rec['tkc_code']})  出勤={wd_s} 労働={wh_s}")
+            print(f"      → {' / '.join(problems)}  ※TKC入力漏れの可能性。確認してください")
+        print(f"\n  検知: {len(anomalies)}名に未入力の疑い")
 
     if args.json:
         print("\n--- JSON ---")
