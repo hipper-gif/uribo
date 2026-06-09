@@ -1,7 +1,8 @@
 """美容部スタッフの「現在の基本給」を うりぼう → Mneme へ同期する。
 
-正本設計 (2026-06-08 確定):
-  - 個人のランク割当・override・履歴の正本 = うりぼう beauty_employee_grade (+ beauty_salary_grade)
+正本設計 (2026-06-08 確定 / 等級表は 2026-06-09 Mneme一本化):
+  - 個人のランク割当・override・履歴の正本 = うりぼう beauty_employee_grade
+  - 等級表(ランク→金額)の正本 = Mneme salary_grades (grade_master.py 経由で取得)
   - Mneme employees.base_salary / salary_type / employment_type は
     それを映す「派生スナップショット」。SmileyBase 等の他システムが読む用。
   - 同期方向は うりぼう → Mneme の一方向のみ。逆向き(Mnemeへ直接入力)はしない。
@@ -9,7 +10,7 @@
 このスクリプトが計算する各人の値:
   - employment_type: beauty_employee_grade の雇用形態 (Mneme表記へ変換: パート→パート・アルバイト)
   - salary_type:     パート→時給 / それ以外→月給
-  - base_salary:     beauty_salary_grade マスタ額(雇用形態×ランク) + base_salary_override
+  - base_salary:     Mneme salary_grades マスタ額(雇用形態×ランク) + base_salary_override
 
 使い方:
     python sync_grades_to_mneme.py            # プレビュー(差分表示のみ・無変更)
@@ -27,6 +28,8 @@ import sys
 import urllib.parse
 import urllib.request
 from datetime import date
+
+import grade_master
 
 try:  # Windows コンソール(cp932)でも記号を出せるよう UTF-8 に固定
     sys.stdout.reconfigure(encoding="utf-8")
@@ -77,17 +80,6 @@ def _patch(base: str, token: str, path: str, body: dict) -> None:
     urllib.request.urlopen(req).read()
 
 
-def active_record(rows: list, today: str, **match) -> dict | None:
-    """effective_from/effective_to で today 時点に有効な最初のレコードを返す。
-    rows は effective_from 降順前提。"""
-    for r in rows:
-        if any(r.get(k) != v for k, v in match.items()):
-            continue
-        if r["effective_from"] <= today and (r.get("effective_to") is None or r["effective_to"] >= today):
-            return r
-    return None
-
-
 def salary_type_for(uribo_etype: str) -> str:
     return "時給" if uribo_etype == "パート" else "月給"
 
@@ -97,7 +89,6 @@ def build_targets() -> tuple[list[dict], list[dict]]:
     today = date.today().isoformat()
 
     grades = _get(NIC_URL, NIC_TOKEN, "beauty_employee_grade?order=effective_from.desc")
-    master = _get(NIC_URL, NIC_TOKEN, "beauty_salary_grade?order=effective_from.desc")
 
     emps = _get(MNE_URL, MNE_TOKEN, "employees?" + urllib.parse.urlencode({
         "or": "(primary_department.eq.美容,departments.cs.{美容})",
@@ -115,17 +106,14 @@ def build_targets() -> tuple[list[dict], list[dict]]:
         if g["effective_from"] <= today and (g.get("effective_to") is None or g["effective_to"] >= today):
             active_by_emp[eid] = g
 
-    def master_amount(etype: str, grade: str) -> int | None:
-        rec = active_record(master, today, employment_type=etype, grade=grade)
-        return int(rec["base_amount"]) if rec else None
-
     targets = []
     for eid, g in sorted(active_by_emp.items()):
         emp = empmap.get(eid)
         if not emp:
             continue  # うりぼうにランクはあるがMneme美容部に該当なし(配置替え等)
         uribo_etype = g["employment_type"]
-        amt = master_amount(uribo_etype, g["grade"])
+        # master は Mneme salary_grades(正本)から取得
+        amt = grade_master.get_master_amount(uribo_etype, g["grade"], today)
         if amt is None:
             continue
         override = int(g.get("base_salary_override") or 0)

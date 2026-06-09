@@ -49,6 +49,8 @@ from pathlib import Path
 import pdfplumber
 from dotenv import load_dotenv
 
+import grade_master
+
 # Windows cp932 環境でも絵文字・Unicode記号を出力できるようにする
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -401,21 +403,11 @@ def get_active_grade_record(employee_id: int, year: int, month: int) -> dict | N
 
 
 def get_grade_master_amount(employment_type: str, grade: str, year: int, month: int) -> int:
-    """beauty_salary_grade マスタからその月時点の base_amount を取得"""
-    qs = urllib.parse.urlencode({
-        "employment_type": f"eq.{employment_type}",
-        "grade": f"eq.{grade}",
-        "order": "effective_from.desc",
-    })
-    rows = _api_get(f"beauty_salary_grade?{qs}")
-    month_start = f"{year:04d}-{month:02d}-01"
-    month_end = f"{year:04d}-{month:02d}-31"
-    for r in rows:
-        if r["effective_from"] <= month_end:
-            eto = r.get("effective_to")
-            if eto is None or eto >= month_start:
-                return int(r.get("base_amount") or 0)
-    return 0
+    """全社等級表(Mneme salary_grades)からその月時点の基本給を取得。
+    旧 beauty_salary_grade は廃止(2026-06-09 Mneme一本化)。"""
+    target = f"{year:04d}-{month:02d}-28"  # 月内の代表日
+    amt = grade_master.get_master_amount(employment_type, grade, target)
+    return int(amt or 0)
 
 
 def check_contract_drift(emp_id: int, year: int, month: int, pdf_base_salary: int) -> dict | None:

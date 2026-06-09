@@ -43,6 +43,8 @@ from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 from playwright.sync_api import Page, sync_playwright
 
+import grade_master
+
 load_dotenv(Path(__file__).parent / ".env")
 
 API_URL = os.getenv("NICOLIO_API_URL", "https://twinklemark.xsrv.jp/nicolio-api/api.php")
@@ -537,24 +539,12 @@ def get_active_grade(employee_id: int, year: int, mon: int) -> dict | None:
 
 
 def get_grade_base_amount(employment_type: str, grade: str, year: int, mon: int) -> int:
+    """全社等級表(Mneme salary_grades)からその月時点の基本給を取得。
+    旧 beauty_salary_grade は廃止(2026-06-09 Mneme一本化)。"""
     last_day = calendar.monthrange(year, mon)[1]
-    month_end = f"{year:04d}-{mon:02d}-{last_day:02d}"
-    qs = urllib.parse.urlencode({
-        "employment_type": f"eq.{employment_type}",
-        "grade": f"eq.{grade}",
-        "effective_from": f"lte.{month_end}",
-        "order": "effective_from.desc",
-        "limit": "5",
-    })
-    rows = _api_request("GET", f"beauty_salary_grade?{qs}")
-    if not isinstance(rows, list):
-        return 0
-    month_start = f"{year:04d}-{mon:02d}-01"
-    for r in rows:
-        eto = r.get("effective_to")
-        if eto is None or eto >= month_start:
-            return int(r["base_amount"])
-    return 0
+    target = f"{year:04d}-{mon:02d}-{last_day:02d}"
+    amt = grade_master.get_master_amount(employment_type, grade, target)
+    return int(amt or 0)
 
 
 _commission_cache: list[dict] = []
