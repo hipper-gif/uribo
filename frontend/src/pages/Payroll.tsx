@@ -178,12 +178,16 @@ export function Payroll() {
 
   async function openMonthPdf() {
     const apiUrl = (import.meta.env.VITE_API_URL as string).replace('/api.php', '')
-    const token = import.meta.env.VITE_API_TOKEN as string
     try {
+      // 認証は Nicolio セッション（admin/sysadmin 限定）。トークンは使わない
       const res = await fetch(`${apiUrl}/payroll_pdf.php?year=${year}&month=${month}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       })
       if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          alert('給与明細の閲覧には Nicolio への管理者ログインが必要です')
+          return
+        }
         alert(`PDF取得失敗: HTTP ${res.status}\n（まだサーバーに反映されていない可能性）`)
         return
       }

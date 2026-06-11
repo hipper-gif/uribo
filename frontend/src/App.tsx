@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import { AnnualView } from './pages/AnnualView'
 import { QuarterlyView } from './pages/QuarterlyView'
@@ -40,7 +41,53 @@ const ADMIN_NAV = [
   { to: '/tkc-compare', label: 'TKC比較', idx: '★' },
 ]
 
+const NICOLIO_HOME = 'https://twinklemark.xsrv.jp/nicolio/'
+const AUTH_URL = (import.meta.env.VITE_API_URL as string).replace('/api.php', '') + '/auth.php'
+
+type AuthState = 'loading' | 'ok' | 'unauthed' | 'denied'
+
+/**
+ * 認証ゲート: うりぼーは給与・売上データを扱うため、
+ * Nicolio セッション（admin/sysadmin ロール）必須。
+ * 2026-06-11 以前は埋め込みトークンで誰でも閲覧できる状態だった。
+ */
+function useAuthGate(): AuthState {
+  const [state, setState] = useState<AuthState>('loading')
+  useEffect(() => {
+    let cancelled = false
+    fetch(`${AUTH_URL}?action=me`, { credentials: 'include' })
+      .then(async res => {
+        if (cancelled) return
+        if (!res.ok) { setState('unauthed'); return }
+        const data = await res.json()
+        const role = data?.user?.role
+        setState(role === 'admin' || role === 'sysadmin' ? 'ok' : 'denied')
+      })
+      .catch(() => { if (!cancelled) setState('unauthed') })
+    return () => { cancelled = true }
+  }, [])
+  return state
+}
+
+function AuthMessage({ state }: { state: AuthState }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '80px 24px', fontFamily: 'sans-serif' }}>
+      {state === 'loading' && <p>認証確認中…</p>}
+      {state === 'unauthed' && (
+        <>
+          <p style={{ marginBottom: 16 }}>うりぼーの利用には Nicolio へのログインが必要です</p>
+          <a href={NICOLIO_HOME} style={{ color: '#2563eb' }}>Nicolio でログインする</a>
+        </>
+      )}
+      {state === 'denied' && (
+        <p>うりぼー（売上・給与）は管理者限定です。アクセス権が必要な場合は管理者に連絡してください。</p>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
+  const auth = useAuthGate()
   // URL に ?admin=1 が含まれていれば管理者モード(LocalStorage に保存)
   if (typeof window !== 'undefined') {
     const sp = new URLSearchParams(window.location.search)
@@ -49,6 +96,7 @@ export default function App() {
   }
   const isAdmin = typeof window !== 'undefined' && localStorage.getItem('uribo_admin') === '1'
   const navItems = isAdmin ? [...NAV, ...ADMIN_NAV] : NAV
+  if (auth !== 'ok') return <AuthMessage state={auth} />
   return (
     <BrowserRouter basename="/uribo">
       <div className="app">

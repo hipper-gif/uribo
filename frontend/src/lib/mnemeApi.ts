@@ -1,5 +1,8 @@
-const MNEME_URL = import.meta.env.VITE_MNEME_API_URL
-const MNEME_TOKEN = import.meta.env.VITE_MNEME_API_TOKEN
+// Mneme（従業員DB）参照 — mneme-api を直接叩かず、nicolio-api のプロキシ
+// （/api.php/mneme/employees、セッション認証）を経由する。
+// admin/sysadmin セッションでは全カラム取得可（うりぼー利用者は admin 前提）。
+
+const API_URL = import.meta.env.VITE_API_URL
 
 export interface MnemeEmployee {
   id: number
@@ -23,11 +26,9 @@ export async function fetchBeautyStaff(): Promise<MnemeEmployee[]> {
     is_active: 'eq.1',
     select: 'id,name,employment_type,base_salary,salary_type,job_title,primary_department,departments,health_insurance_enrolled,pension_enrolled,health_insurance_premium,care_insurance_premium,pension_insurance_premium',
   })
-  const url = `${MNEME_URL}/employees?${params}`
+  const url = `${API_URL}/mneme/employees?${params}`
   try {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${MNEME_TOKEN}` },
-    })
+    const res = await fetch(url, { credentials: 'include' })
     if (!res.ok) return []
     return await res.json()
   } catch {
