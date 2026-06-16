@@ -238,82 +238,148 @@ export interface DraftBuilderInput {
   entry: AggregatedEntry
   itemByCode: Record<string, { id: number; item_code: string }>
   existingByStoreItem: Record<string, { id: number; amount: number }>
+  /** 全集計エントリ(6117 Twinkle代を全店舗合算して按分するため必要) */
+  allEntries: AggregatedEntry[]
+}
+
+/** 親TKC科目に複数のうりぼーitemが混在する場合の、取引先名/摘要による明細単位の細分ルール。
+ *  classifyOutsourcing と同じ発想を 6218/6219/6226/6227/6113 へ横展開。
+ *  返り値の item_code が itemByCode に無ければ呼び出し側が primary へフォールバックする。
+ *  ★これが無いと「6218通信費の中のサブスク(microsoft/spotify/amazon_prime)」「6227の中のゴミ回収」
+ *    「6219の中の水道」「6226の中の非ウォーター福利厚生」が primary に全寄せされ、細目itemが消える。 */
+export const TKC_SUBCLASSIFIERS: Record<string, (trader: string, memo: string) => string> = {
+  // 通信費: サブスクを取引先名で分離、残りは communication
+  '6218': (t, m) => {
+    const s = t + m
+    if (/マイクロソフト|microsoft|ﾏｲｸﾛｿﾌﾄ/i.test(s)) return 'microsoft'
+    if (/スポティファイ|spotify|ｽﾎﾟﾃｨﾌｧｲ/i.test(s)) return 'spotify'
+    if (/アマゾン|amazon|ｱﾏｿﾞﾝ/i.test(s)) return 'amazon_prime'
+    return 'communication'
+  },
+  // 水道光熱費: 水道/ガスを分離、残りは電気
+  '6219': (t, m) => {
+    const s = t + m
+    if (/水道/.test(s)) return 'water_utility'
+    if (/ガス|ｶﾞｽ|\bgas\b/i.test(s)) return 'gas'
+    return 'electricity'
+  },
+  // 福利厚生費: ウォーターサーバー(富士山の銘水)は water_supply、それ以外は welfare(本来の福利厚生)
+  '6226': (t, m) => {
+    const s = t + m
+    if (/富士山|銘水|ウォーター|water/i.test(s)) return 'water_supply'
+    return 'welfare'
+  },
+  // 支払手数料: ゴミ回収は garbage、残りは fees
+  '6227': (t, m) => {
+    const s = t + m
+    if (/ゴミ|ごみ|塵芥|清掃/.test(s)) return 'garbage'
+    return 'fees'
+  },
+  // 広告宣伝費: HPB(ホットペッパー/リクルート)は hpb、それ以外(リジョブ等)は advertising
+  '6113': (t, m) => {
+    const s = t + m
+    // 「リクルートペイメント手数料」は6227側なのでここには来ない
+    if (/ホットペッパー|ﾎｯﾄﾍﾟｯﾊﾟｰ|hot ?pepper|hpb|リクルート|ﾘｸﾙｰﾄ/i.test(s)) return 'hpb'
+    return 'advertising'
+  },
 }
 
 export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft[] {
-  const { entry, itemByCode, existingByStoreItem } = input
+  const { entry, itemByCode, existingByStoreItem, allEntries } = input
   const rule = TKC_RULES[entry.tkc_code]
   if (!rule || rule.skip || rule.uribo_codes.length === 0) return []
-  const codes = rule.uribo_codes.filter(c => itemByCode[c])
-  if (codes.length === 0) return []
 
-  const exKey = (code: string) => `${entry.store_id}|${itemByCode[code]?.id}`
-  const drafts: AssignmentDraft[] = codes.map(code => {
+  const mkDraft = (storeId: number, code: string, amount: number): AssignmentDraft | null => {
     const it = itemByCode[code]
-    const ex = existingByStoreItem[exKey(code)]
+    if (!it) return null
+    const ex = existingByStoreItem[`${storeId}|${it.id}`]
     return {
       tkc_code: entry.tkc_code,
-      store_id: entry.store_id,
+      store_id: storeId,
       item_code: code,
-      item_id: it?.id ?? null,
-      amount: 0,
+      item_id: it.id,
+      amount: Math.round(amount),
       existing_amount: ex?.amount ?? null,
       existing_row_id: ex?.id ?? null,
     }
-  })
+  }
 
-  // 6117 外注費 特別処理(単一item判定より前に行う必要あり):
-  //  Twinkle代: (合計 − 40,000介護按分) ÷2 を各店舗 twinkle_fee へ。
+  // 6117 外注費 特別処理(細分判定より前):
+  //  Twinkle代: 全6117エントリ(両店舗)を合算 →(合計 − 40,000介護按分)÷2 を各店舗 twinkle_fee へ。
+  //    ★店舗ごとに按分すると、6117が複数店舗に分割計上されたとき(2026/05: 寝屋川170k+守口65k)
+  //      互いに上書きして過小になるバグがあった。合算してから1回だけ生成する。
   //  和田委託費: うりぼー側はsalary_totalに含むため無視。
-  //  その他: outsourcing へ。
+  //  その他: outsourcing へ(店舗別)。
   if (entry.tkc_code === '6117') {
+    const drafts: AssignmentDraft[] = []
     const bd = classifyOutsourcingBreakdown(entry)
-    drafts.find(d => d.item_code === 'outsourcing')!.amount = bd.other
+    const out = mkDraft(entry.store_id, 'outsourcing', bd.other)
+    if (out) drafts.push(out)
 
-    // Twinkle代を両店舗の twinkle_fee に按分 (TKCは寝屋川店に全額計上される前提)
-    if (bd.twinkle > 0) {
-      const KAIGO_DEDUCT = 40000
-      const perStoreTwinkle = Math.max(0, bd.twinkle - KAIGO_DEDUCT) / 2
-      const twinkleItem = itemByCode['twinkle_fee']
-      if (twinkleItem) {
-        for (const targetStoreId of [1, 2]) {
-          const ex = existingByStoreItem[`${targetStoreId}|${twinkleItem.id}`]
-          drafts.push({
-            tkc_code: '6117',
-            store_id: targetStoreId,
-            item_code: 'twinkle_fee',
-            item_id: twinkleItem.id,
-            amount: Math.round(perStoreTwinkle),
-            existing_amount: ex?.amount ?? null,
-            existing_row_id: ex?.id ?? null,
-          })
+    // 全6117エントリのうち最小store_idのエントリでのみ Twinkle代を生成(重複防止)
+    const sixEntries = allEntries.filter(e => e.tkc_code === '6117')
+    const isPrimaryEntry = sixEntries.every(e => e.store_id >= entry.store_id)
+    if (isPrimaryEntry) {
+      const totalTwinkle = sixEntries.reduce((s, e) => s + classifyOutsourcingBreakdown(e).twinkle, 0)
+      if (totalTwinkle > 0) {
+        const KAIGO_DEDUCT = 40000
+        const perStore = Math.max(0, totalTwinkle - KAIGO_DEDUCT) / 2
+        for (const sid of [1, 2]) {
+          const tw = mkDraft(sid, 'twinkle_fee', perStore)
+          if (tw) drafts.push(tw)
         }
       }
     }
     return drafts
   }
 
-  // 単一item: 全額(6117より後ろに置くこと)
-  if (codes.length === 1) {
-    drafts[0].amount = entry.amount_incl
+  // 取引先名による明細単位の細分(6218/6219/6226/6227/6113):
+  //  各仕訳明細を分類器でうりぼーitemへ振り分け、合算する。
+  //  分類器の返り値itemが存在しなければ primary(なければ先頭) へフォールバック。
+  const classifier = TKC_SUBCLASSIFIERS[entry.tkc_code]
+  if (classifier) {
+    const fallback = rule.primary ?? rule.uribo_codes[0]
+    const byCode: Record<string, number> = {}
+    for (const d of entry.details) {
+      let code = classifier(d.trader, d.memo)
+      if (!itemByCode[code]) code = fallback
+      byCode[code] = (byCode[code] ?? 0) + d.amount
+    }
+    const drafts: AssignmentDraft[] = []
+    for (const [code, amt] of Object.entries(byCode)) {
+      const d = mkDraft(entry.store_id, code, amt)
+      if (d) drafts.push(d)
+    }
     return drafts
   }
 
-  // primary がある場合: primary以外は既存値、primary が残額
+  const codes = rule.uribo_codes.filter(c => itemByCode[c])
+  if (codes.length === 0) return []
+
+  // 単一item: 全額
+  if (codes.length === 1) {
+    const d = mkDraft(entry.store_id, codes[0], entry.amount_incl)
+    return d ? [d] : []
+  }
+
+  // primary がある場合: primary以外は既存値を維持、primary が残額
   if (rule.primary) {
+    const drafts: AssignmentDraft[] = []
     let sumOthers = 0
-    for (const d of drafts) {
-      if (d.item_code !== rule.primary) {
-        d.amount = d.existing_amount ?? 0
-        sumOthers += d.amount
-      }
+    for (const code of codes) {
+      if (code === rule.primary) continue
+      const ex = existingByStoreItem[`${entry.store_id}|${itemByCode[code].id}`]
+      const amt = ex?.amount ?? 0
+      sumOthers += amt
+      const d = mkDraft(entry.store_id, code, amt)
+      if (d) drafts.push(d)
     }
-    const p = drafts.find(d => d.item_code === rule.primary)!
-    p.amount = Math.max(0, entry.amount_incl - sumOthers)
+    const p = mkDraft(entry.store_id, rule.primary, Math.max(0, entry.amount_incl - sumOthers))
+    if (p) drafts.unshift(p)
     return drafts
   }
 
   // primary 無し: 先頭に全額
-  drafts[0].amount = entry.amount_incl
-  return drafts
+  const d = mkDraft(entry.store_id, codes[0], entry.amount_incl)
+  return d ? [d] : []
 }

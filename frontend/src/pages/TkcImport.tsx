@@ -90,7 +90,7 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
         const skipped = rule?.skip ?? false
         const unmapped = !rule || (rule.uribo_codes.length === 0 && !skipped)
         const drafts = (!skipped && rule)
-          ? buildDraftAssignments({ entry: e, itemByCode, existingByStoreItem })
+          ? buildDraftAssignments({ entry: e, itemByCode, existingByStoreItem, allEntries: entries })
           : []
         return { entry: e, drafts, selected: !skipped && !unmapped, unmapped, skipped }
       })
@@ -300,13 +300,16 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
                             {row.entry.tkc_code === '6117' && (() => {
                               const bd = classifyOutsourcingBreakdown(row.entry)
                               const KAIGO = 40000
-                              const perStore = Math.max(0, bd.twinkle - KAIGO) / 2
+                              // Twinkle代は全6117エントリ(両店舗)を合算して按分
+                              const sixEntries = previewRows.map(r => r.entry).filter(e => e.tkc_code === '6117')
+                              const totalTwinkle = sixEntries.reduce((s, e) => s + classifyOutsourcingBreakdown(e).twinkle, 0)
+                              const perStore = Math.max(0, totalTwinkle - KAIGO) / 2
                               return (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                  <div>Twinkle代(美容部門): <b className="tnum">{formatAmount(bd.twinkle)}</b></div>
-                                  {bd.twinkle > 0 && (
+                                  <div>当店Twinkle代: <b className="tnum">{formatAmount(bd.twinkle)}</b></div>
+                                  {totalTwinkle > 0 && (
                                     <div style={{ paddingLeft: 8, color: 'var(--ink-3)' }}>
-                                      − {formatAmount(KAIGO)}(介護按分) = <b className="tnum">{formatAmount(bd.twinkle - KAIGO)}</b><br />
+                                      全店合算 <b className="tnum">{formatAmount(totalTwinkle)}</b> − {formatAmount(KAIGO)}(介護按分) = <b className="tnum">{formatAmount(totalTwinkle - KAIGO)}</b><br />
                                       ÷ 2店舗 = <b className="tnum">{formatAmount(Math.round(perStore))}</b>/店舗 → twinkle_fee
                                     </div>
                                   )}
