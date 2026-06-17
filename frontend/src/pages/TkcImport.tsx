@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { apiGet, apiPost, apiPatch } from '../lib/api'
-import { useStores } from '../lib/useBeautyData'
+import { useStores, useMonthlyHistory } from '../lib/useBeautyData'
 import { FISCAL_MONTHS, MONTH_LABELS, currentFiscalYear, formatAmount } from '../lib/types'
 import type { BeautyItemMaster, BeautyMonthlyData, DataType } from '../lib/types'
 import {
   parseJournalCsv, aggregateBeauty, TKC_RULES, buildDraftAssignments, classifyOutsourcingBreakdown,
-  type AggregatedEntry, type AssignmentDraft,
+  type AggregatedEntry, type AssignmentDraft, type ParsedJournalRowWithTrader,
 } from '../lib/tkcImport'
+import { auditImport, type AuditFinding } from '../lib/tkcAudit'
 
 interface PreviewRow {
   entry: AggregatedEntry
@@ -41,8 +42,11 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
   const [dataType] = useState<DataType>(initialDataType ?? '実績')
   const [existingData, setExistingData] = useState<BeautyMonthlyData[]>([])
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([])
+  const [journal, setJournal] = useState<ParsedJournalRowWithTrader[]>([])
   const [executing, setExecuting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [auditOverride, setAuditOverride] = useState(false)
+  const { history } = useMonthlyHistory(fiscalYear)
 
   // 全itemを取得(is_active=0も含む)
   useEffect(() => {
@@ -82,9 +86,10 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
   const buildPreview = useCallback((text: string) => {
     setError('')
     try {
-      const journal = parseJournalCsv(text)
-      if (journal.length === 0) { setError('仕訳行が検出できませんでした'); return }
-      const entries = aggregateBeauty(journal, month)
+      const parsed = parseJournalCsv(text)
+      if (parsed.length === 0) { setError('仕訳行が検出できませんでした'); return }
+      setJournal(parsed)
+      const entries = aggregateBeauty(parsed, month)
       const rows: PreviewRow[] = entries.map(e => {
         const rule = TKC_RULES[e.tkc_code]
         const skipped = rule?.skip ?? false
@@ -183,6 +188,23 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
 
   const totalSelected = previewRows.filter(r => r.selected).reduce((s, r) => s + r.drafts.length, 0)
 
+  // 異常検知(「ここおかしくない?」ゲート)
+  const findings = useMemo<AuditFinding[]>(() => {
+    if (previewRows.length === 0 || allItems.length === 0) return []
+    const storeIds = stores.filter(s => s.is_active).map(s => s.id)
+    return auditImport({
+      rows: previewRows.map(r => ({ entry: r.entry, drafts: r.drafts, selected: r.selected })),
+      journal, existing: existingData, history, items: allItems,
+      fiscalYear, month, storeIds: storeIds.length ? storeIds : [1, 2],
+    })
+  }, [previewRows, journal, existingData, history, allItems, fiscalYear, month, stores])
+
+  const blockingFindings = findings.filter(f => f.severity === 'blocking')
+  const warningFindings = findings.filter(f => f.severity === 'warning')
+  const gateBlocked = blockingFindings.length > 0 && !auditOverride
+  // 月・CSVが変わったらゲート解除をリセット
+  useEffect(() => { setAuditOverride(false) }, [csvText, month, fiscalYear])
+
   return (
     <div>
       {!embedded && (
@@ -219,6 +241,39 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {findings.length > 0 && (
+            <div className="card" style={blockingFindings.length ? { borderColor: 'var(--negative)' } : undefined}>
+              <div className="card-head">
+                <div className="card-title">
+                  <span className="index">!?</span>ここおかしくない? チェック
+                </div>
+                <span className="chip" style={blockingFindings.length ? { color: 'var(--negative)' } : undefined}>
+                  {blockingFindings.length ? `要対応 ${blockingFindings.length}件` : `注意 ${warningFindings.length}件`}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '4px 2px' }}>
+                {findings.map((f, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12 }}>
+                    <span style={{
+                      flexShrink: 0, fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4,
+                      color: '#fff', background: f.severity === 'blocking' ? 'var(--negative)' : 'var(--warning, #c08a00)',
+                    }}>{f.severity === 'blocking' ? '要対応' : '注意'}</span>
+                    <span className="chip" style={{ flexShrink: 0, fontSize: 9 }}>{f.group === 'journal' ? '仕訳の疑い' : '取込結果'}</span>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{f.rule} · {f.title}</div>
+                      <div style={{ color: 'var(--ink-3)', lineHeight: 1.4 }}>{f.detail}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {blockingFindings.length > 0 && (
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 10, fontSize: 12, color: 'var(--negative)' }}>
+                  <input type="checkbox" checked={auditOverride} onChange={e => setAuditOverride(e.target.checked)} />
+                  「要対応」を確認した上で反映する(理由を把握済み)
+                </label>
+              )}
+            </div>
+          )}
           {stores.filter(s => groupedByStore[s.id]).map(store => (
             <div className="card" key={store.id}>
               <div className="card-head">
@@ -360,7 +415,12 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
                 {message.text}
               </span>
             )}
-            <button className="btn btn-primary" onClick={handleExecute} disabled={executing || totalSelected === 0}>
+            {gateBlocked && (
+              <span style={{ fontSize: 12, color: 'var(--negative)' }}>
+                要対応 {blockingFindings.length}件を確認してください
+              </span>
+            )}
+            <button className="btn btn-primary" onClick={handleExecute} disabled={executing || totalSelected === 0 || gateBlocked}>
               {executing ? '反映中...' : 'うりぼーに反映'}
             </button>
           </div>

@@ -45,6 +45,24 @@ export function useMonthlyData(storeId: number, fiscalYear: number, dataType?: D
   return { data, loading, reload }
 }
 
+/** 異常検知用: 当年度＋前年度の実績を全店まとめて取得(過去12ヶ月の比較に使う) */
+export function useMonthlyHistory(fiscalYear: number) {
+  const [history, setHistory] = useState<BeautyMonthlyData[]>([])
+
+  const reload = useCallback(async () => {
+    if (!fiscalYear) return
+    const fetchYear = (fy: number) =>
+      apiGet<BeautyMonthlyData[]>('beauty_monthly_data', {
+        select: '*', fiscal_year: `eq.${fy}`, data_type: 'eq.実績',
+      })
+    const [cur, prev] = await Promise.all([fetchYear(fiscalYear), fetchYear(fiscalYear - 1)])
+    setHistory([...(cur.data ?? []), ...(prev.data ?? [])])
+  }, [fiscalYear])
+
+  useEffect(() => { reload() }, [reload])
+  return { history, reloadHistory: reload }
+}
+
 export function useMonthlyMeta(storeId: number, fiscalYear: number, dataType?: DataType) {
   const [data, setData] = useState<BeautyMonthlyMeta[]>([])
   const [loading, setLoading] = useState(false)
