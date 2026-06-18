@@ -71,7 +71,9 @@ const MEMO_EXPECTED: { re: RegExp; codes: string[]; label: string }[] = [
 
 /** 美容に関係しそうな取引先(部門漏れ検知用)。摘要の店名と併せて使う */
 const BEAUTY_VENDOR_RE = /リジョブ|ホットペッパー|ﾎｯﾄﾍﾟｯﾊﾟｰ|hpb|ビューティガレージ|キャンアイドレッシー|富士山|銘水/i
-const BEAUTY_MEMO_RE = /寝屋川|守口|美容/
+// ★「寝屋川/守口」単体は介護の地名(寝屋川市障害福祉・訪問介護連絡会 等)にも出て誤検知するため、
+//   「店」付き or 「美容」に限定(2026-06 年次仕訳で誤検知4件中3件が介護地名と判明)
+const BEAUTY_MEMO_RE = /寝屋川店|守口店|美容/
 
 export interface AuditInput {
   rows: { entry: AggregatedEntry; drafts: AssignmentDraft[]; selected: boolean }[]
