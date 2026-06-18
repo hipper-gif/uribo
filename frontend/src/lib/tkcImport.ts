@@ -32,10 +32,12 @@ export interface TkcMappingRule {
 export type OutsourcingKind = 'twinkle' | 'wada' | 'other'
 export function classifyOutsourcing(trader: string, memo: string): OutsourcingKind {
   const s = (trader + ' ' + memo).toLowerCase()
+  // ★和田判定を先に: TKC上、和田委託費も取引先が "Twinkle" 名義になることがあるため、
+  //   「和田」と明記された行は Twinkle名義でも和田委託費(salary_total済→取込対象外)に倒す。
+  //   (経緯: 2026/05 守口の "Twinkle 委託販売手数料 65,000" が実は和田委託で、Twinkle代と誤判定された)
+  if (/ワダ|和田|ﾜﾀﾞ|wada/i.test(s)) return 'wada'
   // 「テインクル」「ティンクル」「twinkle」「スギハラ」「杉原」「ソウカ」「爽夏」を含むなら Twinkle代
   if (/テインクル|ティンクル|ﾃｲﾝｸﾙ|twinkle|スギハラ|杉原|ｽｷﾞﾊﾗ|ソウカ|爽夏|ｿｳｶ/i.test(trader + memo)) return 'twinkle'
-  // 「ワダ」「和田」を含むなら和田委託費
-  if (/ワダ|和田|ﾜﾀﾞ|wada/i.test(s)) return 'wada'
   return 'other'
 }
 
