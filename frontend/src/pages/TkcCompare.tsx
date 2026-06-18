@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useItemMaster, useMonthlyData } from '../lib/useBeautyData'
-import { FISCAL_MONTHS, currentFiscalYear, formatAmount, formatMan, MGMT_FEE_CODE, NON_TAXABLE_ITEM_CODES } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, currentFiscalYear, formatAmount, formatMan, MGMT_FEE_CODE, NON_TAXABLE_ITEM_CODES } from '../lib/types'
+import { reconcileMonth } from '../lib/tkcRecon'
 
 /** TKC勘定科目コード → うりぼー item_code (複数対応) のマッピング */
 const TKC_TO_URIBO: Record<string, { name: string; uribo_codes: string[]; note?: string }> = {
@@ -94,6 +95,31 @@ export function TkcCompare() {
     }
     return m
   }, [actualData1, actualData2, items])
+
+  // ── 残差突合(正しさ検証) ──
+  const [reconMonth, setReconMonth] = useState<number>(0)
+  const tkcByCode = useMemo(() => {
+    const m: Record<string, TkcRow> = {}
+    for (const r of tkcRows) m[r.code] = r
+    return m
+  }, [tkcRows])
+  const availableMonths = useMemo<number[]>(
+    () => FISCAL_MONTHS.filter(mo => tkcRows.some(r => (r.monthly[mo] ?? 0) !== 0)),
+    [tkcRows],
+  )
+  useEffect(() => {
+    if (availableMonths.length && !availableMonths.includes(reconMonth)) {
+      setReconMonth(availableMonths[availableMonths.length - 1])
+    }
+  }, [availableMonths, reconMonth])
+  const reconResults = useMemo(() => {
+    if (!reconMonth) return []
+    const tkcAt = (c: string) => tkcByCode[c]?.monthly[reconMonth] ?? 0
+    const uriboAt = (c: string) => uriboLookup[c]?.[reconMonth] ?? 0
+    return reconcileMonth(tkcAt, uriboAt)
+  }, [reconMonth, tkcByCode, uriboLookup])
+  const reconAuto = reconResults.filter(r => r.rule.mode === 'auto')
+  const reconFlagged = reconAuto.filter(r => !r.withinTol)
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -292,10 +318,65 @@ export function TkcCompare() {
             </div>
           </div>
 
+          {/* 残差突合(正しさ検証) */}
+          {reconResults.length > 0 && (
+            <div className="card" style={{ marginBottom: 12, ...(reconFlagged.length ? { borderColor: 'var(--negative)' } : {}) }}>
+              <div className="card-head">
+                <div className="card-title"><span className="index">✓?</span>残差突合（正しさ検証）</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select className="select" value={reconMonth} onChange={e => setReconMonth(Number(e.target.value))}>
+                    {availableMonths.map(m => <option key={m} value={m}>{MONTH_LABELS[m]}</option>)}
+                  </select>
+                  <span className="chip" style={{ color: reconFlagged.length ? 'var(--negative)' : 'var(--positive)' }}>
+                    {reconFlagged.length ? `要確認 ${reconFlagged.length}件` : `全${reconAuto.length}科目 一致 ✓`}
+                  </span>
+                </div>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--rule)' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 10px' }}>科目</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px' }}>TKC(税込換算)</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px' }}>意図的差分</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px' }}>うりぼー</th>
+                    <th style={{ textAlign: 'right', padding: '6px 10px' }}>残差</th>
+                    <th style={{ textAlign: 'center', padding: '6px 10px' }}>判定</th>
+                    <th style={{ textAlign: 'left', padding: '6px 10px' }}>意図的差分の根拠</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reconResults.map((r, i) => {
+                    const manual = r.rule.mode === 'manual'
+                    const ng = !manual && !r.withinTol
+                    return (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--rule-soft)', background: manual ? 'var(--paper-2)' : ng ? 'rgba(220,80,80,0.08)' : undefined }}>
+                        <td style={{ padding: '6px 10px' }}>{r.rule.label} <span style={{ color: 'var(--ink-4)', fontFamily: 'monospace', fontSize: 10 }}>{r.rule.tkcCodes.join('+')}</span></td>
+                        <td className="tnum" style={{ padding: '6px 10px', textAlign: 'right' }}>{formatAmount(r.tkcInclTotal)}</td>
+                        <td className="tnum" style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--ink-3)' }}>{r.rule.offsetIncl ? (r.rule.offsetIncl > 0 ? '+' : '') + formatAmount(r.rule.offsetIncl) : '—'}</td>
+                        <td className="tnum" style={{ padding: '6px 10px', textAlign: 'right' }}>{formatAmount(r.uriboTotal)}</td>
+                        <td className={`tnum ${ng ? 'num-neg' : ''}`} style={{ padding: '6px 10px', textAlign: 'right', fontWeight: ng ? 700 : 400 }}>
+                          {r.residual >= 0 ? '+' : ''}{formatAmount(r.residual)}
+                        </td>
+                        <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                          {manual ? <span style={{ color: 'var(--ink-3)', fontSize: 11 }}>手動</span> : ng ? <span style={{ color: 'var(--negative)', fontWeight: 700 }}>⚠</span> : <span style={{ color: 'var(--positive)' }}>✓</span>}
+                        </td>
+                        <td style={{ padding: '6px 10px', fontSize: 10, color: 'var(--ink-3)' }}>{r.rule.note}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.5 }}>
+                残差 = うりぼー − (TKC税込換算 + 意図的差分)。<b>0に近いほど会計的に正しい</b>。⚠は許容超＝真の誤りの疑い。「手動」は税区分混在・按分のため自動判定せず参考表示（人件費・外注ブロック）。<br />
+                ※意図的差分の宣言は <code>tkcRecon.ts</code> の RECON_RULES（CLAUDE.md「TKC連携イレギュラー運用」と1対1）。運用が変わったら必ず同期。
+              </div>
+            </div>
+          )}
+
           {/* 比較テーブル */}
           <div className="card">
             <div className="card-head">
-              <div className="card-title"><span className="index">DIFF</span>科目別差額</div>
+              <div className="card-title"><span className="index">DIFF</span>科目別差額(参考・素の差)</div>
               <span className="smallcaps">{fiscalYear}年度 · 全店舗合計 · {taxMode === 'exclusive' ? '税抜換算' : '税込'}</span>
             </div>
             <table className="comparison-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
