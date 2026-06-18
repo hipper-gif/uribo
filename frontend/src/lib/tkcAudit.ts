@@ -9,6 +9,7 @@
  * すべて純粋関数。しきい値は AUDIT_THRESHOLDS に集約(調整は1箇所)。
  */
 import type { BeautyItemMaster, BeautyMonthlyData, ItemCategory } from './types'
+import { EXPENSE_CATEGORIES, calcDerivedAmount } from './types'
 import type { AggregatedEntry, AssignmentDraft, ParsedJournalRowWithTrader } from './tkcImport'
 import { TKC_DEPT_TO_STORE } from './tkcImport'
 
@@ -48,6 +49,10 @@ export const AUDIT_THRESHOLDS = {
   /** R18: 親子合算ズレの許容(円 と 比率の両方を超えたら警告) */
   r18AbsTol: 1000,
   r18PctTol: 0.05,
+  /** R21: 派生計算(預かり税/仕入消費税)の再計算照合 許容(円) */
+  derivedTol: 500,
+  /** R21: 再計算照合する派生item */
+  derivedCodes: ['withholding_tax', 'vat_purchase'] as string[],
 } as const
 
 /** 会計月の絶対インデックス(美容は4月始まり。1〜3月は翌年扱い) */
@@ -215,6 +220,49 @@ export function auditImport(input: AuditInput): AuditFinding[] {
         rule: 'R18', severity: 'warning', group: 'data', storeId: row.entry.store_id,
         title: `TKC ${row.entry.tkc_code} ${row.entry.tkc_name} の振分合計が不一致`,
         detail: `${storeName(row.entry.store_id)}: TKC ${row.entry.amount_incl.toLocaleString()}円に対し振分先合計 ${sumSameStore.toLocaleString()}円(差 ${diff >= 0 ? '+' : ''}${diff.toLocaleString()}円)。細目の振り分け漏れの疑い。`,
+      })
+    }
+  }
+
+  // R21: 内部整合 — 派生計算(預かり税/仕入消費税)の再計算照合
+  // 反映後の値マップを store ごとに組み、calcDerivedAmount の結果と保存値を突き合わせる
+  const valuesByStore = new Map<number, Record<string, number>>()
+  for (const [k, amt] of result) {
+    const sep = k.indexOf('|')
+    const sid = Number(k.slice(0, sep))
+    const code = k.slice(sep + 1)
+    if (!valuesByStore.has(sid)) valuesByStore.set(sid, {})
+    valuesByStore.get(sid)![code] = amt
+  }
+  for (const sid of storeIds) {
+    const values = valuesByStore.get(sid)
+    if (!values) continue
+    for (const code of AUDIT_THRESHOLDS.derivedCodes) {
+      const stored = values[code]
+      if (stored === undefined) continue
+      const recalc = calcDerivedAmount(code, values)
+      if (recalc === null) continue
+      if (Math.abs(stored - recalc) > AUDIT_THRESHOLDS.derivedTol) {
+        const it = itemByCode.get(code)
+        findings.push({
+          rule: 'R21', severity: 'warning', group: 'data', storeId: sid,
+          title: `${it?.item_name ?? code}が再計算値とズレ`,
+          detail: `${storeName(sid)}: 保存値 ${Math.round(stored).toLocaleString()}円 / 再計算 ${recalc.toLocaleString()}円(差 ${Math.round(stored - recalc).toLocaleString()}円)。取込で課税仕入が変わった場合はDataEntryで再保存すると自動再計算されます(預かり税は保存時計算)。`,
+        })
+      }
+    }
+  }
+
+  // R22: マスタ整合 — item_category が9区分(+売上)の許容集合か(ENUM事故/全寄せ対策)
+  const validCats = new Set<string>([...EXPENSE_CATEGORIES, '売上'])
+  for (const it of items) {
+    if (!it.is_active) continue
+    const cat = (it.item_category ?? '').trim()
+    if (!cat || !validCats.has(cat)) {
+      findings.push({
+        rule: 'R22', severity: 'blocking', group: 'data', storeId: null,
+        title: `項目「${it.item_name}」のカテゴリが不正(${cat || '空'})`,
+        detail: `item_code=${it.item_code} の item_category が9区分のいずれでもありません(${cat || '空文字'})。ENUM事故等でマスタが壊れた可能性。このままだとダッシュボード集計から漏れます。`,
       })
     }
   }
