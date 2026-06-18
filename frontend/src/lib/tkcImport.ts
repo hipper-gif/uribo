@@ -318,6 +318,14 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
     const out = mkDraft(entry.store_id, 'outsourcing', bd.other)
     if (out) drafts.push(out)
 
+    // 和田委託費: 給料扱い → その店舗(守口)の salary_total に加算する。
+    //   6212従業員給与には和田分が含まれないため、ここで足し込む。
+    //   execute側で同一(store,item)のdraftを合算するので、6212由来のsalary_totalと自動で合算される。
+    if (bd.wada > 0) {
+      const wd = mkDraft(entry.store_id, 'salary_total', bd.wada)
+      if (wd) drafts.push(wd)
+    }
+
     // 全6117エントリのうち最小store_idのエントリでのみ Twinkle代を生成(重複防止)
     const sixEntries = allEntries.filter(e => e.tkc_code === '6117')
     const isPrimaryEntry = sixEntries.every(e => e.store_id >= entry.store_id)

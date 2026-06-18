@@ -143,23 +143,36 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
     setExecuting(true)
     setMessage(null)
     try {
-      const promises: Promise<unknown>[] = []
-      let count = 0
+      // 同一(store,item)のdraftを合算してから書き込む
+      // (例: 6212従業員給与 + 6117和田委託 → 守口 salary_total に合算)
+      const agg = new Map<string, { store_id: number; item_id: number; amount: number; existing_row_id: number | null }>()
       for (const row of previewRows) {
         if (!row.selected) continue
         for (const d of row.drafts) {
           if (!d.item_id) continue
-          if (d.amount === 0 && d.existing_row_id === null) continue
-          if (d.existing_row_id !== null) {
-            promises.push(apiPatch('beauty_monthly_data', { id: `eq.${d.existing_row_id}` }, { amount: d.amount }))
+          const k = `${d.store_id}|${d.item_id}`
+          const e = agg.get(k)
+          if (e) {
+            e.amount += d.amount
+            if (e.existing_row_id === null) e.existing_row_id = d.existing_row_id
           } else {
-            promises.push(apiPost('beauty_monthly_data', {
-              store_id: d.store_id, fiscal_year: fiscalYear, month, data_type: dataType,
-              item_id: d.item_id, amount: d.amount,
-            }))
+            agg.set(k, { store_id: d.store_id, item_id: d.item_id, amount: d.amount, existing_row_id: d.existing_row_id })
           }
-          count++
         }
+      }
+      const promises: Promise<unknown>[] = []
+      let count = 0
+      for (const e of agg.values()) {
+        if (e.amount === 0 && e.existing_row_id === null) continue
+        if (e.existing_row_id !== null) {
+          promises.push(apiPatch('beauty_monthly_data', { id: `eq.${e.existing_row_id}` }, { amount: e.amount }))
+        } else {
+          promises.push(apiPost('beauty_monthly_data', {
+            store_id: e.store_id, fiscal_year: fiscalYear, month, data_type: dataType,
+            item_id: e.item_id, amount: e.amount,
+          }))
+        }
+        count++
       }
       await Promise.all(promises)
       setMessage({ type: 'success', text: `${count}件 反映しました` })
@@ -368,7 +381,7 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
                                       ÷ 2店舗 = <b className="tnum">{formatAmount(Math.round(perStore))}</b>/店舗 → twinkle_fee
                                     </div>
                                   )}
-                                  <div>和田委託費相当: <b className="tnum">{formatAmount(bd.wada)}</b> <span style={{ color: 'var(--positive)' }}>(給与に含)</span></div>
+                                  <div>和田委託費: <b className="tnum">{formatAmount(bd.wada)}</b> {bd.wada > 0 && <span style={{ color: 'var(--positive)' }}>→ salary_total に加算</span>}</div>
                                   <div>その他真の外注: <b className="tnum">{formatAmount(bd.other)}</b> → outsourcing</div>
                                 </div>
                               )

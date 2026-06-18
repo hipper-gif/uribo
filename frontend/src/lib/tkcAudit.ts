@@ -115,19 +115,22 @@ export function auditImport(input: AuditInput): AuditFinding[] {
   const median = (a: number[]) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2 }
 
   // ── 反映後の状態 result[store][code] = 金額 を構築 ──
+  // 既存値をベースに、importが触れるitemは draft合算値で上書き
+  // (同一(store,code)に複数draftが来る場合は合算: 例 6212給与 + 6117和田 → salary_total)
   const result = new Map<string, number>()       // key store|code
-  const touched = new Set<string>()              // 今回importが触れる store|code
   for (const r of existing) {
     const it = itemById.get(r.item_id)
     if (it) result.set(`${r.store_id}|${it.item_code}`, parseFloat(r.amount) || 0)
   }
+  const draftSum = new Map<string, number>()
   for (const row of rows) {
     if (!row.selected) continue
     for (const d of row.drafts) {
-      result.set(`${d.store_id}|${d.item_code}`, d.amount)
-      touched.add(`${d.store_id}|${d.item_code}`)
+      const k = `${d.store_id}|${d.item_code}`
+      draftSum.set(k, (draftSum.get(k) ?? 0) + d.amount)
     }
   }
+  for (const [k, v] of draftSum) result.set(k, v)
   const resultAmt = (store: number, code: string) => result.get(`${store}|${code}`) ?? null
 
   // ════════ ① 取込結果の疑い ════════
