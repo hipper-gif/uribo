@@ -822,6 +822,38 @@ def sync_from_suttade_json(json_path: Path, month: str, dry_run: bool = False) -
     print("\n完了")
 
 
+# ---- staff_raw 取り込みモード（組み替え後の既定経路：ログイン無し） -------------
+# サロンボードへのログイン・スクレイプは「取り込み口＝ちょぼまる」に一本化された。
+# うりぼーは beauty_staff_raw（ちょぼまるが landing した生値）を読んで給与計算するだけ。
+
+
+def fetch_staff_raw(store_id: int, year: int, mon: int) -> list[dict]:
+    """beauty_staff_raw から当月・当店のスタッフ別生値を取得する。"""
+    qs = urllib.parse.urlencode({
+        "store_id": f"eq.{store_id}",
+        "year": f"eq.{year}",
+        "month": f"eq.{mon}",
+    })
+    rows = _api_request("GET", f"beauty_staff_raw?{qs}")
+    return rows if isinstance(rows, list) else []
+
+
+def sync_staff_from_raw(month: str, dry_run: bool = False) -> None:
+    """beauty_staff_raw を読んで push_staff_payroll → beauty_payroll_monthly を作る。
+    ログイン・スクレイプは一切行わない（ちょぼまるが取得済みの前提）。"""
+    year, mon = (int(x) for x in month.split("-"))
+    print(f"\n=== staff_raw 取り込みモード {month} ===")
+    for store, store_id in [("neyagawa", 1), ("moriguchi", 2)]:
+        staff_list = fetch_staff_raw(store_id, year, mon)
+        if not staff_list:
+            print(f"  [{store}] beauty_staff_raw に当月データなし"
+                  f"（先にちょぼまるのサロンボード取得が必要）")
+            continue
+        # beauty_staff_raw の列名は calc_payroll の参照キーと一致するため無変換で渡せる
+        push_staff_payroll(store, month, staff_list, dry_run=dry_run)
+    print("\n完了")
+
+
 def main():
     parser = argparse.ArgumentParser(description="サロンボード→Uribo同期")
     parser.add_argument("--store", choices=["neyagawa", "moriguchi", "both"], default="both")
@@ -851,9 +883,18 @@ def main():
         "--non-interactive", action="store_true",
         help="CAPTCHA 等で自動ログイン失敗しても手動介入を待たず即エラー終了 (cron 運用用)",
     )
+    parser.add_argument(
+        "--use-staff-raw", action="store_true",
+        help="beauty_staff_raw から読んで給与計算（ログイン無し・取り込み口一本化後の既定経路）",
+    )
     args = parser.parse_args()
 
     month = args.month or prev_month_str()
+
+    # staff_raw 取り込みモード（組み替え後の既定経路：ログイン無し）
+    if args.use_staff_raw:
+        sync_staff_from_raw(month, dry_run=args.dry_run)
+        return
 
     # Suttade JSON 取り込みモード: ログイン・スクレイプをスキップ
     if args.use_suttade_json:

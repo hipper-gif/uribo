@@ -15,9 +15,17 @@ import os
 import urllib.parse
 import urllib.request
 
-MNEME_URL = os.getenv("MNEME_API_URL", "https://twinklemark.xsrv.jp/mneme-api/index.php")
-MNEME_TOKEN = os.getenv("MNEME_API_TOKEN", "mneme_secret_2525xsrv")
 BEAUTY_DEPT_ID = 3
+
+
+# 注: トークンは呼び出し時に読む（モジュール読込が load_dotenv より先だと
+# 環境変数が未反映で placeholder のまま 401 になるため。2026-07-01 修正）
+def _mneme_url() -> str:
+    return os.getenv("MNEME_API_URL", "https://twinklemark.xsrv.jp/mneme-api/index.php")
+
+
+def _mneme_token() -> str:
+    return os.getenv("MNEME_API_TOKEN", "mneme_secret_2525xsrv")
 
 # うりぼう雇用形態 → Mneme salary_grades.employment_type
 ETYPE_TO_GRADE_VOCAB = {
@@ -35,8 +43,8 @@ def fetch_salary_grades(department_id: int = BEAUTY_DEPT_ID) -> list[dict]:
         return _cache[department_id]
     qs = urllib.parse.urlencode({"department_id": f"eq.{department_id}", "order": "grade.asc"})
     req = urllib.request.Request(
-        f"{MNEME_URL}/salary_grades?{qs}",
-        headers={"Authorization": f"Bearer {MNEME_TOKEN}"},
+        f"{_mneme_url()}/salary_grades?{qs}",
+        headers={"Authorization": f"Bearer {_mneme_token()}"},
     )
     with urllib.request.urlopen(req) as res:
         text = res.read().decode("utf-8")
