@@ -30,7 +30,7 @@ PDFから抽出する項目:
     beauty_payroll_monthly: gross_total, net_payment, social_insurance_total,
         income_tax, resident_tax, tkc_pdf_filename, tkc_verified_at, status='tkc_entered'
     beauty_monthly_data: 店舗別合計を以下3項目に UPSERT
-        - 人件費(item_id=6): gross_total 合計
+        - 人件費(item_id=6): gross_total 合計 − 通勤(transit) 合計 (通勤はitem7で別計上のため二重計上防止)
         - 法定福利費(item_id=11): 健保+厚生年金 のみ合計 (雇用保険・社保合計は除外)
         - 交通費合計(item_id=7): transit_amount 合計 (beauty_payroll_monthly から取得)
 """
@@ -618,16 +618,21 @@ def apply_to_db(year: int, month: int, pdf_records: list[dict],
     fy = fiscal_year_for(year, month)
     STORE_LABEL = {1: "寝屋川店", 2: "守口店"}
     for store_id, vals in by_store.items():
-        salary = vals["salary"]
+        gross = vals["salary"]  # Σ支給合計(通勤手当込み)
         welfare = vals["welfare"]  # ×1: 会社負担分のみ(健保+厚生年金は労使折半なので給与控除≒会社負担)
         transit = vals["transit"]
+        # ★人件費(item6)は通勤手当を除いた額を入れる。
+        #   item6(人件費) と item7(交通費) は両方「人件費」カテゴリで合算されるため、
+        #   item6=支給合計(通勤込み) のままだと通勤が二重計上になる(2026-07-06 6月分で発覚)。
+        #   設計: item6 = 支給合計 − 通勤 / item7 = 通勤 → カテゴリ計 = 支給合計(通勤込み) と一致。
+        salary = gross - transit
         if salary == 0 and welfare == 0 and transit == 0:
             continue
         a1 = upsert_monthly_data(store_id, fy, month, 6, salary)
         a2 = upsert_monthly_data(store_id, fy, month, 11, welfare)
         a3 = upsert_monthly_data(store_id, fy, month, 7, transit)
         print(
-            f"  {STORE_LABEL[store_id]}: 人件費=¥{salary:,} ({a1}) / "
+            f"  {STORE_LABEL[store_id]}: 人件費=¥{salary:,} (=支給{gross:,}−通勤{transit:,}) ({a1}) / "
             f"法定福利費=¥{welfare:,} ({a2}) / 交通費=¥{transit:,} ({a3})"
         )
 
