@@ -14,9 +14,16 @@
 
 PDFから抽出する項目:
     TKCコード, 名前, 基本給, 役職手当, 指名報酬, 売上達成金,
+    課税支給額(taxable_gross), 通勤手当(transit_amount=交通費),
     支給合計(gross_total), 差引支給額(net_payment),
     社会保険料合計(social_insurance_total), 所得税, 住民税,
     出勤日数(work_days=「平日・休日出勤」), 労働時間(work_hours=「出勤時間」H:MM)
+
+交通費・支給合計 突合:
+    交通費(transit_amount)は手入力で正解ソース(しんせいくん)が未接続のため、
+    TKC賃金台帳PDFの通勤手当(=支給合計−課税支給額)が唯一の突合点。
+    PDFの通勤手当・支給合計と、うりぼー beauty_payroll_monthly の値を個人別に照合し、
+    手入力ミスや古い取込値の残留(人件費item6の過少計上)を検知する。
 
 勤怠・入力ミス検知:
     出勤日数 or 労働時間が未入力(空欄)のスタッフを警告表示する(全スタッフ対象)。
@@ -157,6 +164,7 @@ def _parse_by_coords(pdf_path: Path) -> list[dict]:
             "nomination_allowance": 0, "commission_amount": 0,
             "perfect_attendance_amount": 0,
             "gross_total": 0, "net_payment": 0,
+            "taxable_gross": 0, "transit_amount": 0,
             "social_insurance_total": 0,
             "health_insurance": 0, "pension_insurance": 0, "employment_insurance": 0,
             "income_tax": 0, "resident_tax": 0,
@@ -175,6 +183,9 @@ def _parse_by_coords(pdf_path: Path) -> list[dict]:
                 rec["position_allowance"] = v
 
         # 2. 支給セクション (指名報酬・売上達成金・皆勤手当・支給合計)
+        # 支給行の列: col1=指名報酬 col2=売上達成金 col3=皆勤手当
+        #   col8=課税支給額 / col9=通勤手当(非課税) / col_total=支給合計(通勤込み)
+        #   会計恒等式: 支給合計(col_total) = 課税支給額(col8) + 通勤手当(col9)
         nom_y = find_y(bw, "指名報酬")
         for x, v in values_at(bw, nom_y):
             if _in_range(x, "col1"):
@@ -183,8 +194,15 @@ def _parse_by_coords(pdf_path: Path) -> list[dict]:
                 rec["commission_amount"] = v
             elif _in_range(x, "col3"):
                 rec["perfect_attendance_amount"] = v
+            elif _in_range(x, "col8"):
+                rec["taxable_gross"] = v          # 課税支給額
+            elif _in_range(x, "col9"):
+                rec["transit_amount"] = v         # 通勤手当(非課税)=交通費
             elif _in_range(x, "col_total"):
-                rec["gross_total"] = v
+                rec["gross_total"] = v            # 支給合計(通勤手当込み)
+        # 通勤手当が col9 に出ない稀なレイアウトへの保険: 恒等式で補完
+        if not rec["transit_amount"] and rec["gross_total"] and rec["taxable_gross"]:
+            rec["transit_amount"] = rec["gross_total"] - rec["taxable_gross"]
 
         # 3. 控除セクション (健保・厚年・雇用保険・社保合計・所得税・住民税・立替金)
         # 「健康保険」ラベル行の下に「控」記号行を挟んで値行が来るため dy_max=30
@@ -822,6 +840,43 @@ def main():
             print(f"  ⚠ {pdf_rec['name']:<14} (tkc={pdf_rec['tkc_code']})  出勤={wd_s} 労働={wh_s}")
             print(f"      → {' / '.join(problems)}  ※TKC入力漏れの可能性。確認してください")
         print(f"\n  検知: {len(anomalies)}名に未入力の疑い")
+
+    # ===== 交通費・支給合計 突合 (PDF賃金台帳 vs うりぼー) =====
+    # 交通費(transit_amount)は手入力で、正解ソース(しんせいくん)が未接続のため、
+    # TKC賃金台帳PDFの通勤手当が唯一の突合点。ここが抜けていて過去に検知漏れが起きた
+    # (2026-07 日妻の交通費/支給合計ズレ)。支給合計もPDF=支給合計(通勤込み)と突合し、
+    # 古い取込値の残留(=人件費item6の過少計上)を検知する。
+    # ※パート(main比較スキップ対象)も含め全員チェックする。
+    print(f"\n=== 交通費・支給合計 突合 (PDF賃金台帳 vs うりぼー) ===")
+    consist_diffs = []
+    for pdf_rec in pdf_records:
+        alias = alias_map.get(pdf_rec["tkc_code"])
+        if not alias:
+            continue
+        emp_id = int(alias["employee_id"])
+        db_rec = get_payroll_record(emp_id, year, month)
+        if not db_rec:
+            continue
+        checks = [
+            ("交通費(通勤手当)", "transit",
+             int(pdf_rec.get("transit_amount", 0) or 0), int(db_rec.get("transit_amount", 0) or 0)),
+            ("支給合計", "gross",
+             int(pdf_rec.get("gross_total", 0) or 0), int(db_rec.get("gross_total", 0) or 0)),
+        ]
+        bad = [(lbl, kind, p, d) for lbl, kind, p, d in checks if p != d]
+        if bad:
+            consist_diffs.append((pdf_rec["name"], pdf_rec["tkc_code"], bad))
+    if not consist_diffs:
+        print("  ✓ 全員 交通費・支給合計とも PDF=うりぼー で一致")
+    else:
+        for name, tkc, bad in consist_diffs:
+            print(f"  ⚠ {name:<14} (tkc={tkc})")
+            for lbl, kind, p, d in bad:
+                # transit は --apply で反映されない(手入力値)。gross は --apply で反映される。
+                hint = ("Payroll画面で手入力を修正 or PDF側を確認"
+                        if kind == "transit" else "--apply でPDF値を反映すると解消")
+                print(f"      {lbl}: PDF={p:,}円  うりぼー={d:,}円  Δ={p-d:+,}  → {hint}")
+        print(f"\n  検知: {len(consist_diffs)}名で不一致")
 
     if args.json:
         print("\n--- JSON ---")
