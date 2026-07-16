@@ -30,22 +30,36 @@ export interface TkcMappingRule {
  *  Twinkle代/和田はうりぼー側で別計上(twinkle_fee/salary_total)のためインポート対象外
  */
 export type OutsourcingKind = 'twinkle' | 'wada' | 'other'
-export function classifyOutsourcing(trader: string, memo: string): OutsourcingKind {
+export function classifyOutsourcing(trader: string, memo: string, storeId?: number): OutsourcingKind {
   const s = (trader + ' ' + memo).toLowerCase()
   // ★和田判定を先に: TKC上、和田委託費も取引先が "Twinkle" 名義になることがあるため、
   //   「和田」と明記された行は Twinkle名義でも和田委託費(salary_total済→取込対象外)に倒す。
   //   (経緯: 2026/05 守口の "Twinkle 委託販売手数料 65,000" が実は和田委託で、Twinkle代と誤判定された)
   if (/ワダ|和田|ﾜﾀﾞ|wada/i.test(s)) return 'wada'
-  // 「テインクル」「ティンクル」「twinkle」「スギハラ」「杉原」「ソウカ」「爽夏」を含むなら Twinkle代
-  if (/テインクル|ティンクル|ﾃｲﾝｸﾙ|twinkle|スギハラ|杉原|ｽｷﾞﾊﾗ|ソウカ|爽夏|ｿｳｶ/i.test(trader + memo)) return 'twinkle'
+  // 「テインクル」「ティンクル」「twinkle」「スギハラ」「杉原」「ソウカ」「爽夏」を含むなら Twinkle系名義
+  if (/テインクル|ティンクル|ﾃｲﾝｸﾙ|twinkle|スギハラ|杉原|ｽｷﾞﾊﾗ|ソウカ|爽夏|ｿｳｶ/i.test(trader + memo)) {
+    // ★守口(store 2)で Twinkle名義だが本人名(杉原/爽夏/サヤカ)が無い行は和田委託とみなす。
+    //   摘要への「和田」明記依頼が徹底されず、2026/05・2026/06 と連続で
+    //   「Twinkle 委託販売手数料 65,000」(守口・和田明記なし)が再発したためコード側で救済。
+    //   真のTwinkle代は "W21 テインクル,スギハラ サヤカ" のように本人名入りで振込される。
+    //   誤判定時はプレビューの明細プルダウン(TkcImport)で手動修正できる。
+    const personal = /スギハラ|杉原|ｽｷﾞﾊﾗ|ソウカ|爽夏|ｿｳｶ|サヤカ|ｻﾔｶ/i.test(trader + memo)
+    if (storeId === 2 && !personal) return 'wada'
+    return 'twinkle'
+  }
   return 'other'
 }
 
-/** 6117 の集計エントリを Twinkle代/和田/その他で分類した内訳を返す */
-export function classifyOutsourcingBreakdown(entry: AggregatedEntry): { twinkle: number; wada: number; other: number; total: number } {
+/** 6117 の集計エントリを Twinkle代/和田/その他で分類した内訳を返す。
+ *  kindOf で明細ごとの手動上書き(プレビューUI)を差し込める(未指定明細は自動判定)。 */
+export function classifyOutsourcingBreakdown(
+  entry: AggregatedEntry,
+  kindOf?: (detailIdx: number) => OutsourcingKind | undefined,
+): { twinkle: number; wada: number; other: number; total: number } {
   const bd = { twinkle: 0, wada: 0, other: 0, total: 0 }
-  for (const d of entry.details) {
-    const k = classifyOutsourcing(d.trader, d.memo)
+  for (let i = 0; i < entry.details.length; i++) {
+    const d = entry.details[i]
+    const k = kindOf?.(i) ?? classifyOutsourcing(d.trader, d.memo, entry.store_id)
     bd[k] += d.amount
     bd.total += d.amount
   }
@@ -242,6 +256,8 @@ export interface DraftBuilderInput {
   existingByStoreItem: Record<string, { id: number; amount: number }>
   /** 全集計エントリ(6117 Twinkle代を全店舗合算して按分するため必要) */
   allEntries: AggregatedEntry[]
+  /** 6117明細区分の手動上書き(プレビューUIから)。未指定明細は自動判定 */
+  kindOf6117?: (entry: AggregatedEntry, detailIdx: number) => OutsourcingKind | undefined
 }
 
 /** 親TKC科目に複数のうりぼーitemが混在する場合の、取引先名/摘要による明細単位の細分ルール。
@@ -287,7 +303,7 @@ export const TKC_SUBCLASSIFIERS: Record<string, (trader: string, memo: string) =
 }
 
 export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft[] {
-  const { entry, itemByCode, existingByStoreItem, allEntries } = input
+  const { entry, itemByCode, existingByStoreItem, allEntries, kindOf6117 } = input
   const rule = TKC_RULES[entry.tkc_code]
   if (!rule || rule.skip || rule.uribo_codes.length === 0) return []
 
@@ -313,8 +329,10 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
   //  和田委託費: うりぼー側はsalary_totalに含むため無視。
   //  その他: outsourcing へ(店舗別)。
   if (entry.tkc_code === '6117') {
+    const bdOf = (e: AggregatedEntry) =>
+      classifyOutsourcingBreakdown(e, kindOf6117 ? (i) => kindOf6117(e, i) : undefined)
     const drafts: AssignmentDraft[] = []
-    const bd = classifyOutsourcingBreakdown(entry)
+    const bd = bdOf(entry)
     const out = mkDraft(entry.store_id, 'outsourcing', bd.other)
     if (out) drafts.push(out)
 
@@ -330,7 +348,7 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
     const sixEntries = allEntries.filter(e => e.tkc_code === '6117')
     const isPrimaryEntry = sixEntries.every(e => e.store_id >= entry.store_id)
     if (isPrimaryEntry) {
-      const totalTwinkle = sixEntries.reduce((s, e) => s + classifyOutsourcingBreakdown(e).twinkle, 0)
+      const totalTwinkle = sixEntries.reduce((s, e) => s + bdOf(e).twinkle, 0)
       if (totalTwinkle > 0) {
         const KAIGO_DEDUCT = 40000
         const perStore = Math.max(0, totalTwinkle - KAIGO_DEDUCT) / 2

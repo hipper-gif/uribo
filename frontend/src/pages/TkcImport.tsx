@@ -4,8 +4,9 @@ import { useStores, useMonthlyHistory } from '../lib/useBeautyData'
 import { FISCAL_MONTHS, MONTH_LABELS, currentFiscalYear, formatAmount } from '../lib/types'
 import type { BeautyItemMaster, BeautyMonthlyData, DataType } from '../lib/types'
 import {
-  parseJournalCsv, aggregateBeauty, TKC_RULES, buildDraftAssignments, classifyOutsourcingBreakdown,
-  type AggregatedEntry, type AssignmentDraft, type ParsedJournalRowWithTrader,
+  parseJournalCsv, aggregateBeauty, TKC_RULES, buildDraftAssignments,
+  classifyOutsourcing, classifyOutsourcingBreakdown,
+  type AggregatedEntry, type AssignmentDraft, type OutsourcingKind, type ParsedJournalRowWithTrader,
 } from '../lib/tkcImport'
 import { auditImport, type AuditFinding } from '../lib/tkcAudit'
 
@@ -46,6 +47,8 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
   const [executing, setExecuting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [auditOverride, setAuditOverride] = useState(false)
+  /** 6117明細区分の手動上書き。キー=`${month}|${store_id}|${detailIdx}`(月替わりで自然に無効化) */
+  const [kind6117, setKind6117] = useState<Record<string, OutsourcingKind>>({})
   const { history } = useMonthlyHistory(fiscalYear)
 
   // 全itemを取得(is_active=0も含む)
@@ -83,19 +86,20 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
   }, [existingData])
 
   // CSV パース → プレビュー構築
-  const buildPreview = useCallback((text: string) => {
+  const buildPreview = useCallback((text: string, kinds: Record<string, OutsourcingKind> = kind6117) => {
     setError('')
     try {
       const parsed = parseJournalCsv(text)
       if (parsed.length === 0) { setError('仕訳行が検出できませんでした'); return }
       setJournal(parsed)
       const entries = aggregateBeauty(parsed, month)
+      const kindOf6117 = (e: AggregatedEntry, i: number) => kinds[`${month}|${e.store_id}|${i}`]
       const rows: PreviewRow[] = entries.map(e => {
         const rule = TKC_RULES[e.tkc_code]
         const skipped = rule?.skip ?? false
         const unmapped = !rule || (rule.uribo_codes.length === 0 && !skipped)
         const drafts = (!skipped && rule)
-          ? buildDraftAssignments({ entry: e, itemByCode, existingByStoreItem, allEntries: entries })
+          ? buildDraftAssignments({ entry: e, itemByCode, existingByStoreItem, allEntries: entries, kindOf6117 })
           : []
         return { entry: e, drafts, selected: !skipped && !unmapped, unmapped, skipped }
       })
@@ -103,7 +107,7 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
     } catch (e) {
       setError((e as Error).message)
     }
-  }, [month, itemByCode, existingByStoreItem])
+  }, [month, itemByCode, existingByStoreItem, kind6117])
 
   // 既存データ・月・itemMaster更新時にプレビュー再構築
   useEffect(() => {
@@ -119,9 +123,23 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
     reader.onload = () => {
       const txt = reader.result as string
       setCsvText(txt)
-      buildPreview(txt)
+      setKind6117({})  // 別ファイルでは明細indexがズレるため上書きをリセット
+      buildPreview(txt, {})
     }
     reader.readAsText(f, 'utf-8')
+  }
+
+  /** 6117明細の区分を手動変更 → 6117行のdraftsのみ再構築(他行の手編集・チェックは保持) */
+  const changeKind6117 = (storeId: number, detailIdx: number, kind: OutsourcingKind) => {
+    const next = { ...kind6117, [`${month}|${storeId}|${detailIdx}`]: kind }
+    setKind6117(next)
+    setPreviewRows(rows => {
+      const entries = rows.map(r => r.entry)
+      const kindOf6117 = (e: AggregatedEntry, i: number) => next[`${month}|${e.store_id}|${i}`]
+      return rows.map(r => r.entry.tkc_code === '6117'
+        ? { ...r, drafts: buildDraftAssignments({ entry: r.entry, itemByCode, existingByStoreItem, allEntries: entries, kindOf6117 }) }
+        : r)
+    })
   }
 
   const updateDraftAmount = (rowIdx: number, draftIdx: number, val: string) => {
@@ -366,14 +384,30 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
                           <td style={{ fontSize: 11, color: 'var(--ink-3)', maxWidth: 280 }}>
                             {rule?.note && <div style={{ marginBottom: 4 }}>{rule.note}</div>}
                             {row.entry.tkc_code === '6117' && (() => {
-                              const bd = classifyOutsourcingBreakdown(row.entry)
+                              const kindOf = (e: AggregatedEntry, i: number) => kind6117[`${month}|${e.store_id}|${i}`]
+                              const bdOf = (e: AggregatedEntry) => classifyOutsourcingBreakdown(e, i => kindOf(e, i))
+                              const bd = bdOf(row.entry)
                               const KAIGO = 40000
                               // Twinkle代は全6117エントリ(両店舗)を合算して按分
                               const sixEntries = previewRows.map(r => r.entry).filter(e => e.tkc_code === '6117')
-                              const totalTwinkle = sixEntries.reduce((s, e) => s + classifyOutsourcingBreakdown(e).twinkle, 0)
+                              const totalTwinkle = sixEntries.reduce((s, e) => s + bdOf(e).twinkle, 0)
                               const perStore = Math.max(0, totalTwinkle - KAIGO) / 2
                               return (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                  {row.entry.details.map((d, di) => {
+                                    const cur = kindOf(row.entry, di) ?? classifyOutsourcing(d.trader, d.memo, row.entry.store_id)
+                                    return (
+                                      <div key={di} style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <span>{d.date.slice(5)} {d.trader || d.memo || '—'} <b className="tnum">{formatAmount(d.amount)}</b></span>
+                                        <select value={cur} style={{ fontSize: 10, padding: '0 2px' }}
+                                          onChange={e => changeKind6117(row.entry.store_id, di, e.target.value as OutsourcingKind)}>
+                                          <option value="twinkle">Twinkle代</option>
+                                          <option value="wada">和田委託</option>
+                                          <option value="other">その他外注</option>
+                                        </select>
+                                      </div>
+                                    )
+                                  })}
                                   <div>当店Twinkle代: <b className="tnum">{formatAmount(bd.twinkle)}</b></div>
                                   {totalTwinkle > 0 && (
                                     <div style={{ paddingLeft: 8, color: 'var(--ink-3)' }}>

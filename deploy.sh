@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SSH_KEY="$HOME/.ssh/xserver_twinklemark"
+SSH_KEY="$HOME/.ssh/id_xserver_panel"
 SSH_USER="twinklemark"
 SSH_HOST="sv16114.xserver.jp"
 SSH_PORT="10022"
