@@ -210,10 +210,10 @@ export function auditImport(input: AuditInput): AuditFinding[] {
     }
   }
 
-  // R18: 親子合算ズレ(TKC親科目の額 vs 振分先itemの合計)。6117はクロス店舗按分のため除外
+  // R18: 親子合算ズレ(TKC親科目の額 vs 振分先itemの合計)。6117/6118はクロス店舗按分のため除外
   for (const row of rows) {
     if (!row.selected) continue
-    if (row.entry.tkc_code === '6117') continue
+    if (row.entry.tkc_code === '6117' || row.entry.tkc_code === '6118') continue
     const sumSameStore = row.drafts.filter(d => d.store_id === row.entry.store_id).reduce((s, d) => s + d.amount, 0)
     const diff = sumSameStore - row.entry.amount_incl
     const pct = row.entry.amount_incl ? Math.abs(diff) / row.entry.amount_incl : 0

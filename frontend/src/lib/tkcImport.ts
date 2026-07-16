@@ -82,7 +82,7 @@ export const TKC_RULES: Record<string, TkcMappingRule & { name: string }> = {
   '6113': { name: '広告宣伝費', uribo_codes: ['hpb', 'advertising'], primary: 'advertising', note: 'HPB(月額固定)は既存値維持、HPB以外を advertising へ' },
   '6116': { name: '採用教育費', uribo_codes: ['training', 'recruitment'], primary: 'recruitment' },
   '6117': { name: '外注費', uribo_codes: ['outsourcing'], note: '★Twinkle代(介護按分前)+和田委託費が混入。Twinkle代は(TKC-40,000)÷2を各店舗twinkle_feeへ' },
-  '6118': { name: 'ロイヤルティ', uribo_codes: ['franchise_fee'] },
+  '6118': { name: 'ロイヤルティ', uribo_codes: ['franchise_fee'], note: '★両店分がまとめて片部門に計上されることがある(2026/06: 011に40,000一本)。全店舗合算を折半して各店franchise_feeへ' },
   '6212': { name: '従業員給与', uribo_codes: ['salary_total'] },
   '6214': { name: '減価償却費', uribo_codes: [], skip: true, note: '非現金費用のためうりぼうではキャッシュ視点で計上しない' },
   '6215': { name: '地代家賃', uribo_codes: ['rent'], note: '寝屋川店は請求124k=家賃121k+水道3k分離。要確認' },
@@ -365,6 +365,24 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
           if (tw) drafts.push(tw)
         }
       }
+    }
+    return drafts
+  }
+
+  // 6118 ロイヤルティ(加盟金) 特別処理: キャンアイドレッシーが両店分をまとめて引き落とすため、
+  //   TKC上は片方の部門に全額計上されることがある(2026/06: 011に40,000一本)。
+  //   実契約は各店等額(20,000/月)のため、全6118エントリを合算して2店舗で折半する。
+  //   ★寝屋川40,000のまま守口に20,000を足すと合計60,000となり仕訳帳合計40,000と乖離する。
+  //   片店だけの臨時ロイヤルティが出た場合はプレビューの反映値を手で直す。
+  if (entry.tkc_code === '6118') {
+    const royaltyEntries = allEntries.filter(e => e.tkc_code === '6118')
+    const isPrimaryEntry = royaltyEntries.every(e => e.store_id >= entry.store_id)
+    if (!isPrimaryEntry) return []  // 折半draftは最小store_idのエントリでのみ生成(重複防止)
+    const total = royaltyEntries.reduce((s, e) => s + e.amount_incl, 0)
+    const drafts: AssignmentDraft[] = []
+    for (const sid of [1, 2]) {
+      const d = mkDraft(sid, 'franchise_fee', total / 2)
+      if (d) drafts.push(d)
     }
     return drafts
   }
