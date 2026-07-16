@@ -395,7 +395,7 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
                               return (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                   {row.entry.details.map((d, di) => {
-                                    const cur = kindOf(row.entry, di) ?? classifyOutsourcing(d.trader, d.memo, row.entry.store_id)
+                                    const cur = kindOf(row.entry, di) ?? classifyOutsourcing(d.trader, d.memo, row.entry.store_id, d.amount)
                                     return (
                                       <div key={di} style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                                         <span>{d.date.slice(5)} {d.trader || d.memo || '—'} <b className="tnum">{formatAmount(d.amount)}</b></span>

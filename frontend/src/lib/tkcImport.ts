@@ -30,12 +30,20 @@ export interface TkcMappingRule {
  *  Twinkle代/和田はうりぼー側で別計上(twinkle_fee/salary_total)のためインポート対象外
  */
 export type OutsourcingKind = 'twinkle' | 'wada' | 'other'
-export function classifyOutsourcing(trader: string, memo: string, storeId?: number): OutsourcingKind {
+
+/** 和田委託費の定額(円/月)。2026/05・06 とも 65,000 で固定。額が変わったらここを更新 */
+export const WADA_FIXED_FEE = 65000
+
+export function classifyOutsourcing(trader: string, memo: string, storeId?: number, amount?: number): OutsourcingKind {
   const s = (trader + ' ' + memo).toLowerCase()
   // ★和田判定を先に: TKC上、和田委託費も取引先が "Twinkle" 名義になることがあるため、
   //   「和田」と明記された行は Twinkle名義でも和田委託費(salary_total済→取込対象外)に倒す。
   //   (経緯: 2026/05 守口の "Twinkle 委託販売手数料 65,000" が実は和田委託で、Twinkle代と誤判定された)
   if (/ワダ|和田|ﾜﾀﾞ|wada/i.test(s)) return 'wada'
+  // ★金額判定: 和田委託費は定額65,000のため、名義に関わらず金額一致で和田に倒す。
+  //   「和田」明記もTwinkle名義パターンも当てにならないことが分かったため(2026/05・06連続再発)、
+  //   一番ブレない「金額」を判定に使う。万一の誤判定はプレビューの明細プルダウンで修正できる。
+  if (amount === WADA_FIXED_FEE) return 'wada'
   // 「テインクル」「ティンクル」「twinkle」「スギハラ」「杉原」「ソウカ」「爽夏」を含むなら Twinkle系名義
   if (/テインクル|ティンクル|ﾃｲﾝｸﾙ|twinkle|スギハラ|杉原|ｽｷﾞﾊﾗ|ソウカ|爽夏|ｿｳｶ/i.test(trader + memo)) {
     // ★守口(store 2)で Twinkle名義だが本人名(杉原/爽夏/サヤカ)が無い行は和田委託とみなす。
@@ -59,7 +67,7 @@ export function classifyOutsourcingBreakdown(
   const bd = { twinkle: 0, wada: 0, other: 0, total: 0 }
   for (let i = 0; i < entry.details.length; i++) {
     const d = entry.details[i]
-    const k = kindOf?.(i) ?? classifyOutsourcing(d.trader, d.memo, entry.store_id)
+    const k = kindOf?.(i) ?? classifyOutsourcing(d.trader, d.memo, entry.store_id, d.amount)
     bd[k] += d.amount
     bd.total += d.amount
   }
