@@ -293,6 +293,24 @@ export function auditImport(input: AuditInput): AuditFinding[] {
     }
   }
 
+  // J4: 6118 ロイヤルティの部門割り誤り(片店舗に全額計上)
+  //   実契約は各店等額(20,000/月)。片部門に一本で計上されるのは仕訳ミス
+  //   (2026/06: 011寝屋川に40,000一本 → 正しくは011/012に20,000ずつ)。
+  //   取込は折半で補正するが、TKC側の仕訳は税理士へ修正依頼が必要。
+  {
+    const royaltyRows = rows.filter(r => r.entry.tkc_code === '6118')
+    const royaltyStores = new Set(royaltyRows.map(r => r.entry.store_id))
+    if (royaltyRows.length > 0 && royaltyStores.size === 1) {
+      const total = royaltyRows.reduce((s, r) => s + r.entry.amount_incl, 0)
+      const sid = [...royaltyStores][0]
+      findings.push({
+        rule: 'J4', severity: 'warning', group: 'journal', storeId: sid,
+        title: `ロイヤルティ(6118)が${storeName(sid)}にのみ全額計上`,
+        detail: `TKC 6118 が ${storeName(sid)} に ${total.toLocaleString()}円 一本で計上されています。実契約は各店等額のため部門割りの仕訳誤りの疑い(正: 各店 ${Math.round(total / 2).toLocaleString()}円)。うりぼーへは折半で取込補正しますが、TKC側は税理士に部門修正を依頼してください。`,
+      })
+    }
+  }
+
   // J2 / J3: 仕訳行を直接走査
   for (const r of journal) {
     const isExpense = /^[56]/.test(r.debit_code)
