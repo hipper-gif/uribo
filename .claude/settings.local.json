@@ -8,7 +8,8 @@
       "Bash(xargs grep:*)",
       "Bash(ssh:*)",
       "Bash(xargs ls:*)",
-      "Bash(scp:*)"
+      "Bash(scp:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python *)"
     ]
   }
 }
