@@ -24,6 +24,7 @@
 | F4 | Twinkle代＝爽夏さんへの給料(介護部門兼任で部門按分)、和田＝委託費でTKC 6117計上だがうりぼう上は守口店salary_total(人件費)扱い。両者ともTKC摘要が"Twinkle"名義になり得る | CLAUDE L117-131 | 経理実態 |
 | F5 | DB初期インポート済＝2,291件(寝屋川+守口+紬の2021-2025実績・2023-2025目標・2025見通し。2026-04-17時点) | project_uribo L36 | データ実査 |
 | F6 | 月初データ準備はDESKTOP-A510H29のschtasksで自動起動(ClioUriboMonthStart毎月1日08:30、ちょぼまる08:00の後段)。本番稼働2026-07-01 | autonomous-ops §10 L177-189 | 環境実査 |
+| F7 | 今道寿子（サロンボード名義 Hisako　.K・守口店・alias employee_id=84・TKCコード無し）の報酬＝**本人売上×50%・リアライズ（別会社）支給**＝Smiley PX2に載せない。検証: 2026-06売上42,730×50%=21,365円がPochiClock realize_manual_entries実績と完全一致。うりぼーへの計算実装要望あり（ROADMAP参照） | 杉原氏 2026-08-05 Clioセッション＋beauty_staff_raw×realize_manual_entries突合 | 杉原氏 |
 
 <!--
 出典書式: <資料名> <タイムスタンプ/行範囲>（例「文字起こし本編 01:10-01:12」「googlechat 6/12 14:50」「requirements.md L84」）。
