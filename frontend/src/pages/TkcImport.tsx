@@ -402,7 +402,7 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
                                         <select value={cur} style={{ fontSize: 10, padding: '0 2px' }}
                                           onChange={e => changeKind6117(row.entry.store_id, di, e.target.value as OutsourcingKind)}>
                                           <option value="twinkle">Twinkle代</option>
-                                          <option value="wada">和田委託</option>
+                                          <option value="itaku">業務委託(和田・今道)</option>
                                           <option value="other">その他外注</option>
                                         </select>
                                       </div>
@@ -415,7 +415,7 @@ export function TkcImport({ initialFiscalYear, initialMonth, initialDataType, on
                                       ÷ 2店舗 = <b className="tnum">{formatAmount(Math.round(perStore))}</b>/店舗 → twinkle_fee
                                     </div>
                                   )}
-                                  <div>和田委託費: <b className="tnum">{formatAmount(bd.wada)}</b> {bd.wada > 0 && <span style={{ color: 'var(--positive)' }}>→ salary_total に加算</span>}</div>
+                                  <div>業務委託費(和田・今道): <b className="tnum">{formatAmount(bd.itaku)}</b> {bd.itaku > 0 && <span style={{ color: 'var(--positive)' }}>→ salary_total に加算</span>}</div>
                                   <div>その他真の外注: <b className="tnum">{formatAmount(bd.other)}</b> → outsourcing</div>
                                 </div>
                               )

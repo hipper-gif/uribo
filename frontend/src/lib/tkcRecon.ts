@@ -52,7 +52,7 @@ export const RECON_RULES: ReconRule[] = [
   { key: 'entertainment', label: '接待交際費', tkcCodes: ['6223'], uriboCodes: ['entertainment'], taxable: true, offsetIncl: 0, mode: 'auto', tol: 2000, claudeRef: '—', note: '6223→entertainment' },
   { key: 'legal', label: '法定福利費', tkcCodes: ['6312'], uriboCodes: ['legal_welfare', 'health_ins_total', 'workers_comp'], taxable: false, offsetIncl: 0, mode: 'auto', tol: 2000, claudeRef: '—', note: '6312→法定福利(非課税)' },
   // ── 複合(税区分混在・按分のため自動判定しない。情報として残差を表示) ──
-  { key: 'labor', label: '人件費・外注(複合)', tkcCodes: ['6212', '6117'], uriboCodes: ['salary_total', 'twinkle_fee', 'outsourcing'], taxable: false, offsetIncl: -40000, mode: 'manual', tol: 0, claudeRef: '1.Twinkle代 / 2.和田 / 3.6117', note: 'TKC(6212+6117)−40000介護 ≒ うりぼー(給与+Twinkle代+外注)。Twinkle按分・和田→給与・税区分混在のため手動確認' },
+  { key: 'labor', label: '人件費・外注(複合)', tkcCodes: ['6212', '6117'], uriboCodes: ['salary_total', 'twinkle_fee', 'outsourcing'], taxable: false, offsetIncl: -40000, mode: 'manual', tol: 0, claudeRef: '1.Twinkle代 / 2.和田・今道 / 3.6117', note: 'TKC(6212+6117)−40000介護 ≒ うりぼー(給与+Twinkle代+外注)。Twinkle按分・業務委託(和田/今道)→給与・税区分混在のため手動確認' },
 ]
 
 export interface ReconResult {

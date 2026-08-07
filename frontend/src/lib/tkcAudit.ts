@@ -123,7 +123,7 @@ export function auditImport(input: AuditInput): AuditFinding[] {
 
   // ── 反映後の状態 result[store][code] = 金額 を構築 ──
   // 既存値をベースに、importが触れるitemは draft合算値で上書き
-  // (同一(store,code)に複数draftが来る場合は合算: 例 6212給与 + 6117和田 → salary_total)
+  // (同一(store,code)に複数draftが来る場合は合算: 例 6212給与 + 6117業務委託(和田・今道) → salary_total)
   const result = new Map<string, number>()       // key store|code
   for (const r of existing) {
     const it = itemById.get(r.item_id)

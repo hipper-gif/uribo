@@ -26,45 +26,51 @@ export interface TkcMappingRule {
   skip?: boolean
 }
 
-/** 6117 外注費の内訳判定: 取引先名/摘要から「Twinkle代/和田委託費/その他真の外注」を識別
- *  Twinkle代/和田はうりぼー側で別計上(twinkle_fee/salary_total)のためインポート対象外
+/** 6117 外注費の内訳判定: 取引先名/摘要から「Twinkle代/業務委託(人件費扱い)/その他真の外注」を識別
+ *  Twinkle代/業務委託はうりぼー側で別計上(twinkle_fee/salary_total)のため outsourcing には入れない
+ *
+ *  ★'itaku'(業務委託) = 和田麻歩 + 今道寿子。どちらもSmiley支払い・TKC 6117計上だが、
+ *    うりぼーでは「給料計算をうりぼーで完結させる」方針により守口店 salary_total(人件費)へ回す。
+ *    (今道は2026-08-07 杉原氏確認で和田と同扱いに確定。docs/facts.md F7/F8)
  */
-export type OutsourcingKind = 'twinkle' | 'wada' | 'other'
+export type OutsourcingKind = 'twinkle' | 'itaku' | 'other'
 
 /** 和田委託費の定額(円/月)。2026/05・06 とも 65,000 で固定。額が変わったらここを更新 */
 export const WADA_FIXED_FEE = 65000
 
 export function classifyOutsourcing(trader: string, memo: string, storeId?: number, amount?: number): OutsourcingKind {
   const s = (trader + ' ' + memo).toLowerCase()
-  // ★和田判定を先に: TKC上、和田委託費も取引先が "Twinkle" 名義になることがあるため、
-  //   「和田」と明記された行は Twinkle名義でも和田委託費(salary_total済→取込対象外)に倒す。
+  // ★業務委託判定を先に: TKC上、和田委託費も取引先が "Twinkle" 名義になることがあるため、
+  //   「和田」と明記された行は Twinkle名義でも業務委託(salary_totalへ)に倒す。
   //   (経緯: 2026/05 守口の "Twinkle 委託販売手数料 65,000" が実は和田委託で、Twinkle代と誤判定された)
-  if (/ワダ|和田|ﾜﾀﾞ|wada/i.test(s)) return 'wada'
-  // ★金額判定: 和田委託費は定額65,000のため、名義に関わらず金額一致で和田に倒す。
+  if (/ワダ|和田|ﾜﾀﾞ|wada/i.test(s)) return 'itaku'
+  // ★今道寿子も同じ業務委託枠(報酬=本人売上×50%で変動するため金額判定は使えない・名義のみ)
+  if (/イマミチ|今道|ｲﾏﾐﾁ|imamichi/i.test(s)) return 'itaku'
+  // ★金額判定: 和田委託費は定額65,000のため、名義に関わらず金額一致で業務委託に倒す。
   //   「和田」明記もTwinkle名義パターンも当てにならないことが分かったため(2026/05・06連続再発)、
   //   一番ブレない「金額」を判定に使う。万一の誤判定はプレビューの明細プルダウンで修正できる。
-  if (amount === WADA_FIXED_FEE) return 'wada'
+  if (amount === WADA_FIXED_FEE) return 'itaku'
   // 「テインクル」「ティンクル」「twinkle」「スギハラ」「杉原」「ソウカ」「爽夏」を含むなら Twinkle系名義
   if (/テインクル|ティンクル|ﾃｲﾝｸﾙ|twinkle|スギハラ|杉原|ｽｷﾞﾊﾗ|ソウカ|爽夏|ｿｳｶ/i.test(trader + memo)) {
-    // ★守口(store 2)で Twinkle名義だが本人名(杉原/爽夏/サヤカ)が無い行は和田委託とみなす。
+    // ★守口(store 2)で Twinkle名義だが本人名(杉原/爽夏/サヤカ)が無い行は業務委託(和田)とみなす。
     //   摘要への「和田」明記依頼が徹底されず、2026/05・2026/06 と連続で
     //   「Twinkle 委託販売手数料 65,000」(守口・和田明記なし)が再発したためコード側で救済。
     //   真のTwinkle代は "W21 テインクル,スギハラ サヤカ" のように本人名入りで振込される。
     //   誤判定時はプレビューの明細プルダウン(TkcImport)で手動修正できる。
     const personal = /スギハラ|杉原|ｽｷﾞﾊﾗ|ソウカ|爽夏|ｿｳｶ|サヤカ|ｻﾔｶ/i.test(trader + memo)
-    if (storeId === 2 && !personal) return 'wada'
+    if (storeId === 2 && !personal) return 'itaku'
     return 'twinkle'
   }
   return 'other'
 }
 
-/** 6117 の集計エントリを Twinkle代/和田/その他で分類した内訳を返す。
+/** 6117 の集計エントリを Twinkle代/業務委託/その他で分類した内訳を返す。
  *  kindOf で明細ごとの手動上書き(プレビューUI)を差し込める(未指定明細は自動判定)。 */
 export function classifyOutsourcingBreakdown(
   entry: AggregatedEntry,
   kindOf?: (detailIdx: number) => OutsourcingKind | undefined,
-): { twinkle: number; wada: number; other: number; total: number } {
-  const bd = { twinkle: 0, wada: 0, other: 0, total: 0 }
+): { twinkle: number; itaku: number; other: number; total: number } {
+  const bd = { twinkle: 0, itaku: 0, other: 0, total: 0 }
   for (let i = 0; i < entry.details.length; i++) {
     const d = entry.details[i]
     const k = kindOf?.(i) ?? classifyOutsourcing(d.trader, d.memo, entry.store_id, d.amount)
@@ -334,7 +340,7 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
   //  Twinkle代: 全6117エントリ(両店舗)を合算 →(合計 − 40,000介護按分)÷2 を各店舗 twinkle_fee へ。
   //    ★店舗ごとに按分すると、6117が複数店舗に分割計上されたとき(2026/05: 寝屋川170k+守口65k)
   //      互いに上書きして過小になるバグがあった。合算してから1回だけ生成する。
-  //  和田委託費: うりぼー側はsalary_totalに含むため無視。
+  //  業務委託(和田・今道): その店舗の salary_total に加算。
   //  その他: outsourcing へ(店舗別)。
   if (entry.tkc_code === '6117') {
     const bdOf = (e: AggregatedEntry) =>
@@ -344,11 +350,11 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
     const out = mkDraft(entry.store_id, 'outsourcing', bd.other)
     if (out) drafts.push(out)
 
-    // 和田委託費: 給料扱い → その店舗(守口)の salary_total に加算する。
-    //   6212従業員給与には和田分が含まれないため、ここで足し込む。
+    // 業務委託(和田・今道): 給料扱い → その店舗(守口)の salary_total に加算する。
+    //   6212従業員給与には両名とも含まれないため、ここで足し込む。
     //   execute側で同一(store,item)のdraftを合算するので、6212由来のsalary_totalと自動で合算される。
-    if (bd.wada > 0) {
-      const wd = mkDraft(entry.store_id, 'salary_total', bd.wada)
+    if (bd.itaku > 0) {
+      const wd = mkDraft(entry.store_id, 'salary_total', bd.itaku)
       if (wd) drafts.push(wd)
     }
 
