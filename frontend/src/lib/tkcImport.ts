@@ -35,8 +35,18 @@ export interface TkcMappingRule {
  */
 export type OutsourcingKind = 'twinkle' | 'itaku' | 'other'
 
-/** 和田委託費の定額(円/月)。2026/05・06 とも 65,000 で固定。額が変わったらここを更新 */
+/** 和田委託費の定額(円/月)。2026/05・06 とも 65,000 で固定。額が変わったらここを更新
+ *  ★和田は「給与(PX2・6212経由)」と「委託販売手数料 65,000(6117経由)」の**両方**を受け取っている。
+ *    2026/07の銀行明細では 7/10 に「ワダ マホ 50,775(6月分給与)」と「ワダ マホ 65,000(委託)」が別々に2本。
+ *    給与は毎月変動(30,525〜96,450)、委託は定額65,000。よって 6117の65,000を salary_total に足しても
+ *    6212の給与とは二重にならない(2026-08-14 PX2支給実績・payroll・銀行明細の3点照合で確認)。 */
 export const WADA_FIXED_FEE = 65000
+
+/** 商店街振興組合費(寝屋川店・円/月)。TKC 6215 地代家賃に「固定費」として家賃と並んで計上される。
+ *  ★取引先名も摘要も無い(空欄+「固定費」)ため**金額でしか判別できない**。額が変わったらここを更新。
+ *  実測(2026/07): 寝屋川の6215は 121,000(家賃・振込先=ヒガシウチ マサミ)と
+ *  11,800(振込先=オオトシシヨウテンガイシンコ=大利商店街振興組合)の2本。 */
+export const SHOPPING_STREET_FEE = 11800
 
 export function classifyOutsourcing(trader: string, memo: string, storeId?: number, amount?: number): OutsourcingKind {
   const s = (trader + ' ' + memo).toLowerCase()
@@ -100,7 +110,7 @@ export const TKC_RULES: Record<string, TkcMappingRule & { name: string }> = {
   '6118': { name: 'ロイヤルティ', uribo_codes: ['franchise_fee'], note: '★両店分がまとめて片部門に計上されることがある(2026/06: 011に40,000一本)。全店舗合算を折半して各店franchise_feeへ' },
   '6212': { name: '従業員給与', uribo_codes: ['salary_total'] },
   '6214': { name: '減価償却費', uribo_codes: [], skip: true, note: '非現金費用のためうりぼうではキャッシュ視点で計上しない' },
-  '6215': { name: '地代家賃', uribo_codes: ['rent'], note: '寝屋川店は請求124k=家賃121k+水道3k分離。要確認' },
+  '6215': { name: '地代家賃', uribo_codes: ['rent', 'shopping_street'], primary: 'rent', note: '★寝屋川は家賃121k+商店街費11.8kの2本が計上される(水道3kは6219側)。金額で分離' },
   '6216': { name: '修繕費', uribo_codes: ['repair'] },
   '6218': { name: '通信費', uribo_codes: ['microsoft', 'spotify', 'amazon_prime', 'communication'], primary: 'communication', note: 'サブスク既存値を維持、電話/ネット等を communication へ' },
   '6219': { name: '水道光熱費', uribo_codes: ['water_utility', 'water_supply', 'electricity', 'gas'], primary: 'electricity', note: '水道既存値を維持、電気/ガスを別途' },
@@ -288,7 +298,11 @@ export interface DraftBuilderInput {
  *  返り値の item_code が itemByCode に無ければ呼び出し側が primary へフォールバックする。
  *  ★これが無いと「6218通信費の中のサブスク(microsoft/spotify/amazon_prime)」「6227の中のゴミ回収」
  *    「6219の中の水道」「6226の中の非ウォーター福利厚生」が primary に全寄せされ、細目itemが消える。 */
-export const TKC_SUBCLASSIFIERS: Record<string, (trader: string, memo: string) => string> = {
+export const TKC_SUBCLASSIFIERS: Record<string, (trader: string, memo: string, amount: number) => string> = {
+  // 地代家賃: 商店街振興組合費(定額)を家賃から分離。取引先名も摘要も無い(空欄+「固定費」)ので金額判定しかない。
+  //  ★これが無いと 6215 全額が rent に寄り、shopping_street が毎月0になる(2026/06・07が実際にそうなった)。
+  //    さらに shopping_street を手入力していた月(2026/04・05)は rent と二重計上になっていた。
+  '6215': (_t, _m, amount) => amount === SHOPPING_STREET_FEE ? 'shopping_street' : 'rent',
   // 通信費: サブスクを取引先名で分離、残りは communication
   '6218': (t, m) => {
     const s = t + m
@@ -409,8 +423,15 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
   if (classifier) {
     const fallback = rule.primary ?? rule.uribo_codes[0]
     const byCode: Record<string, number> = {}
+    // ★この親科目に紐づくうりぼーitemを全部0で初期化してから積む。
+    //   こうしないと「今月TKCに出てこなかった細目」に前月の値が残り、分類先が変わったときに二重計上になる。
+    //   (2026/04の6113: 旧データは hpb 132,000 + advertising 17,670 だったが、分類器が全額をhpbに寄せると
+    //    hpb 149,670 になり、触られない advertising 17,670 が残って合計167,340＝17,670の二重計上になっていた)
+    //   TKCが一次発生源なので「TKCに無い＝その月は発生していない＝0」が正しい。
+    //   計上が翌月にずれた等で本当に必要なら、監査R1が「経常費の欠落」で警告する。
+    for (const c of rule.uribo_codes) if (itemByCode[c]) byCode[c] = 0
     for (const d of entry.details) {
-      let code = classifier(d.trader, d.memo)
+      let code = classifier(d.trader, d.memo, d.amount)
       if (!itemByCode[code]) code = fallback
       byCode[code] = (byCode[code] ?? 0) + d.amount
     }

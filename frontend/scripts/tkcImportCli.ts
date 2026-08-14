@@ -45,10 +45,12 @@ interface Args {
   force: boolean
   /** CSVを使わず、DBの現在値から預かり税だけ検算・是正する */
   recalcOnly: boolean
+  /** 取込から外すTKC科目コード(その月のTKC仕訳が明らかに間違っているとき) */
+  skip: string[]
 }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { csv: '', apply: false, force: false, recalcOnly: false }
+  const a: Args = { csv: '', apply: false, force: false, recalcOnly: false, skip: [] }
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i]
     if (k === '--csv') a.csv = argv[++i]
@@ -57,6 +59,7 @@ function parseArgs(argv: string[]): Args {
     else if (k === '--apply') a.apply = true
     else if (k === '--force') a.force = true
     else if (k === '--recalc-only') a.recalcOnly = true
+    else if (k === '--skip') a.skip = (argv[++i] ?? '').split(',').map(x => x.trim()).filter(Boolean)
     else if (k === '--help' || k === '-h') { usage(); process.exit(0) }
     else throw new Error(`不明な引数: ${k}`)
   }
@@ -79,6 +82,9 @@ TKC仕訳帳CSV → うりぼー反映CLI
   --year   会計年度(省略時はCSVの日付から自動判定。美容は4月始まり)
   --apply  DBへ反映する(既定は dry-run で表示のみ)
   --force  監査の「要対応」があっても反映を強行する
+  --skip   取込から外すTKC科目コード(カンマ区切り)。例: --skip 6215,6219
+           その月のTKC仕訳自体が間違っている(部門の付け間違い等)ときに使い、
+           うりぼー側の正しい値を守る。同時に税理士へ仕訳修正を依頼すること
 
   npm run tkc-import -- --recalc-only --year 2026 --month 6 [--apply]
   --recalc-only  CSVを使わず、DBの現在値から預かり税(=納付税額)だけ検算・是正する
@@ -173,10 +179,11 @@ function buildRows(
   entries: AggregatedEntry[],
   itemByCode: Record<string, { id: number; item_code: string }>,
   existingByStoreItem: Record<string, { id: number; amount: number }>,
+  skipCodes: string[] = [],
 ): PreviewRow[] {
   return entries.map(e => {
     const rule = TKC_RULES[e.tkc_code]
-    const skipped = rule?.skip ?? false
+    const skipped = (rule?.skip ?? false) || skipCodes.includes(e.tkc_code)
     const unmapped = !rule || (rule.uribo_codes.length === 0 && !skipped)
     const drafts = (!skipped && rule)
       ? buildDraftAssignments({ entry: e, itemByCode, existingByStoreItem, allEntries: entries })
@@ -371,7 +378,8 @@ async function main() {
   // ── プレビュー構築 ──
   const entries = aggregateBeauty(journal, month)
   if (entries.length === 0) throw new Error(`${month}月に美容部門(011/012)の仕訳がありません`)
-  const rows = buildRows(entries, itemByCode, existingByStoreItem)
+  const rows = buildRows(entries, itemByCode, existingByStoreItem, args.skip)
+  if (args.skip.length) console.log(`※ --skip 指定により取込対象から除外: ${args.skip.join(', ')}`)
   printPreview(rows, storeNameOf)
 
   // ── 書き込み内容の組み立て(TKC分 → 派生の再計算) ──
