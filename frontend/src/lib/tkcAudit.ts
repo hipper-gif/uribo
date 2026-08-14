@@ -233,6 +233,11 @@ export function auditImport(input: AuditInput): AuditFinding[] {
     const sep = k.indexOf('|')
     const sid = Number(k.slice(0, sep))
     const code = k.slice(sep + 1)
+    // ★DataEntry の派生計算は is_active=1 の item だけを入力にする(useItemMaster経由)。
+    //   ここに is_active=0 の細目(cash_sales_d01_05 等の売上内訳)を混ぜると
+    //   sumTaxableInputs が売上を課税仕入として数え上げ、預かり税の再計算が 0 になって
+    //   毎月「ズレ」の誤検知が出る(2026-08-14 修正)。入力集合をDataEntryと揃える。
+    if (!itemByCode.get(code)?.is_active) continue
     if (!valuesByStore.has(sid)) valuesByStore.set(sid, {})
     valuesByStore.get(sid)![code] = amt
   }
