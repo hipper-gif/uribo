@@ -125,6 +125,7 @@ export const TKC_RULES: Record<string, TkcMappingRule & { name: string }> = {
   '6117': { name: '外注費', uribo_codes: ['outsourcing'], note: '★Twinkle代(介護按分前)+和田委託費が混入。Twinkle代は(TKC-40,000)÷2を各店舗twinkle_feeへ' },
   '6118': { name: 'ロイヤルティ', uribo_codes: ['franchise_fee'], note: '★両店分がまとめて片部門に計上されることがある(2026/06: 011に40,000一本)。全店舗合算を折半して各店franchise_feeへ' },
   '6212': { name: '従業員給与', uribo_codes: ['salary_total'] },
+  '6213': { name: '従業員賞与', uribo_codes: ['bonus'], note: '★毎月の「賞与引当金計上」(CR 2126・非現金・12,500/店)は isAccrualRow で集計前に除外。ここに来るのは実支給を6213に直接載せた場合のみ。通常の実支給は2126取崩で損益に出ないため bonus は給与明細から手入力' },
   '6214': { name: '減価償却費', uribo_codes: [], skip: true, note: '非現金費用のためうりぼうではキャッシュ視点で計上しない' },
   '6215': { name: '地代家賃', uribo_codes: ['rent', 'shopping_street'], primary: 'rent', note: '★寝屋川は家賃121k+商店街費11.8kの2本が計上される(水道3kは6219側)。金額で分離' },
   '6216': { name: '修繕費', uribo_codes: ['repair'] },
@@ -133,7 +134,7 @@ export const TKC_RULES: Record<string, TkcMappingRule & { name: string }> = {
   '6223': { name: '接待交際費', uribo_codes: ['entertainment'] },
   '6224': { name: '保険料', uribo_codes: ['insurance'] },
   '6225': { name: '備品消耗品費', uribo_codes: ['supplies'] },
-  '6226': { name: '福利厚生費', uribo_codes: ['water_supply'], note: '美容部門の6226はほぼウォーターサーバー(富士山の天然水)のため water_supply に充当' },
+  '6226': { name: '福利厚生費', uribo_codes: ['water_supply', 'welfare'], note: 'ウォーターサーバー(富士山の銘水)は water_supply、それ以外(2026/05 守口 スターバックス 4,030 等)は welfare。★welfare を uribo_codes に入れておかないと0初期化の対象外になり、旧値(2026/04 両店 3,300)が残って二重計上になった(2026-08-26 削除済)' },
   '6227': { name: '支払手数料', uribo_codes: ['fees'] },
   '6228': { name: '会議費', uribo_codes: ['meeting'] },
   '6312': { name: '法定福利費', uribo_codes: ['legal_welfare'], note: '貸方分(預り)も発生するが借方ベースで計上' },
@@ -153,6 +154,8 @@ export const TKC_RULES: Record<string, TkcMappingRule & { name: string }> = {
 export interface ParsedJournalRow {
   date: string
   month: number
+  /** 伝票番号(同一伝票=複合仕訳の判定に使う。期中修正の片側だけの行を伝票単位で拾うため) */
+  voucher: string
   debit_code: string
   debit_name: string
   debit_dept: string
@@ -187,6 +190,7 @@ export function parseJournalCsv(text: string): ParsedJournalRowWithTrader[] {
     out.push({
       date,
       month: parseInt(m[1], 10),
+      voucher: (cells[1] ?? '').trim(),
       debit_code: cells[3],
       debit_name: cells[4],
       debit_dept: cells[7],
@@ -239,10 +243,53 @@ export interface AggregatedEntry {
   details: { date: string; trader: string; memo: string; amount: number }[]
 }
 
+const isExpenseCode = (code: string) => /^[56]/.test(code)
+
+const isPLCode = (code: string) => /^[456]/.test(code)
+export const voucherKey = (r: ParsedJournalRow) => `${r.date}|${r.voucher}`
+
+/** 期中修正(部門間の振替)にあたる**伝票**のキー集合を返す。
+ *  税理士が過去月の部門付け間違いを直す仕訳で、例 2026/07/01 伝票: DR 6215 011 121,000 / CR 6215 012 124,000
+ *  ＋ DR 6219 011 3,000(片側だけの行)。借方・貸方が同じ費用科目で部門だけ違う。
+ *  判定は**伝票単位**: 「摘要に期中修正/部門修正 or 同一損益科目の両建て」を含み、かつ伝票内の科目が
+ *  **全部 損益科目(4/5/6xxx)** のもの。相手科目に売掛金・現金などBS科目があるものは、摘要が「期中修正」でも
+ *  本物の費用(例 2026/05/01 PayPay手数料 6,526×2 / CR 1122 売掛金)なので除外しない。
+ *  ★振替を集計に入れると、修正が入った月(7月)の家賃が 242,000/200,000 に化ける。修正の対象月(5月)は
+ *    うりぼー側が --skip で正しい値を保持済みなので、振替伝票そのものは無視するのが正しい。監査J5で一覧を出す。 */
+export function correctionVoucherKeys(rows: ParsedJournalRow[], month: number): Set<string> {
+  const byVoucher = new Map<string, ParsedJournalRow[]>()
+  for (const r of rows) {
+    if (r.month !== month) continue
+    const k = voucherKey(r)
+    const list = byVoucher.get(k)
+    if (list) list.push(r); else byVoucher.set(k, [r])
+  }
+  const out = new Set<string>()
+  for (const [k, vr] of byVoucher) {
+    const flagged = vr.some(r =>
+      /期中修正|部門修正|部門振替/.test(r.memo) ||
+      (!!r.debit_code && r.debit_code === r.credit_code && isPLCode(r.debit_code) && r.debit_dept !== r.credit_dept))
+    if (!flagged) continue
+    const codes = vr.flatMap(r => [r.debit_code, r.credit_code]).filter(Boolean)
+    if (codes.length && codes.every(isPLCode)) out.add(k)
+  }
+  return out
+}
+
+/** 引当金の計上(非現金の見込費用)か。例: DR 6213 従業員賞与 / CR 2126 賞与引当金「賞与引当金計上」12,500/店/月。
+ *  年間見込の月割りで、実支給時は 2126 の取崩(損益に出ない)。うりぼーはキャッシュ視点なので引当計上は費用にしない。
+ *  → 6213 は引当以外(実支給を直接 6213 に載せた場合)で来たときだけ bonus に取り込む(facts F17)。 */
+export function isAccrualRow(r: ParsedJournalRow): boolean {
+  return r.credit_code === '2126' || /引当金計上/.test(r.memo)
+}
+
 /** 仕訳行を美容部門×TKC科目で集計
  *  - 4111(売上): 貸方 が美容部門の行を集計
- *  - その他: 借方 が美容部門の行を集計
- *  - 借方/貸方で同じTKCコードが両側に出る場合(法定福利費の還付等)は借方優先
+ *  - その他: 借方 が美容部門の行を集計し、**同じ費用科目の貸方(戻し)は差し引いてネット**にする(2026-08-26)
+ *    ★従来は借方だけ拾っていたため、6312 の雇用保険(従業員負担分の貸方)が相殺されず法定福利費が毎月
+ *      +2.7〜5.2k/店 過大、5211 の返品返金(2026/06 守口 SHEIN 8,257)・6225 の立替金振替(2026/07 寝屋川 500)も
+ *      過大のままだった。TKCの残高推移表・部門損益はネット値なので、ネットにして初めて突合が合う。
+ *  - 期中修正(部門振替)と引当計上(非現金)は集計しない(isCorrectionRow / isAccrualRow)
  */
 export function aggregateBeauty(rows: ParsedJournalRowWithTrader[], month: number): AggregatedEntry[] {
   const acc = new Map<string, AggregatedEntry>()
@@ -255,8 +302,10 @@ export function aggregateBeauty(rows: ParsedJournalRowWithTrader[], month: numbe
     }
     return e
   }
+  const corrections = correctionVoucherKeys(rows, month)
   for (const r of rows) {
     if (r.month !== month) continue
+    if (corrections.has(voucherKey(r)) || isAccrualRow(r)) continue
     // 借方が美容
     const debitStore = TKC_DEPT_TO_STORE[r.debit_dept]
     if (debitStore && r.debit_code) {
@@ -265,13 +314,20 @@ export function aggregateBeauty(rows: ParsedJournalRowWithTrader[], month: numbe
       e.amount_excl += r.debit_excl
       e.details.push({ date: r.date, trader: r.trader ?? '', memo: r.memo, amount: r.debit_incl })
     }
-    // 貸方が美容 (主に売上)
+    // 貸方が美容
     const creditStore = TKC_DEPT_TO_STORE[r.credit_dept]
     if (creditStore && r.credit_code === '4111') {
+      // 売上は貸方が発生側
       const e = ensure(r.credit_code, r.credit_name, creditStore.storeId, creditStore.storeName)
       e.amount_incl += r.credit_incl
       e.amount_excl += r.credit_excl
       e.details.push({ date: r.date, trader: r.trader ?? '', memo: r.memo, amount: r.credit_incl })
+    } else if (creditStore && isExpenseCode(r.credit_code)) {
+      // 費用科目の貸方 = 戻し(返金・立替の振替・従業員負担分の相殺)。借方から差し引く(明細は負の額で残す)
+      const e = ensure(r.credit_code, r.credit_name, creditStore.storeId, creditStore.storeName)
+      e.amount_incl -= r.credit_incl
+      e.amount_excl -= r.credit_excl
+      e.details.push({ date: r.date, trader: r.trader ?? '', memo: r.memo, amount: -r.credit_incl })
     }
   }
   return Array.from(acc.values()).sort((a, b) => {

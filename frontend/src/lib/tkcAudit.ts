@@ -11,7 +11,7 @@
 import type { BeautyItemMaster, BeautyMonthlyData, ItemCategory } from './types'
 import { EXPENSE_CATEGORIES, calcDerivedAmount } from './types'
 import type { AggregatedEntry, AssignmentDraft, ParsedJournalRowWithTrader } from './tkcImport'
-import { TKC_DEPT_TO_STORE } from './tkcImport'
+import { TKC_DEPT_TO_STORE, correctionVoucherKeys, voucherKey, isAccrualRow } from './tkcImport'
 
 export type Severity = 'blocking' | 'warning'
 
@@ -312,6 +312,44 @@ export function auditImport(input: AuditInput): AuditFinding[] {
         rule: 'J4', severity: 'warning', group: 'journal', storeId: sid,
         title: `ロイヤルティ(6118)が${storeName(sid)}にのみ全額計上`,
         detail: `TKC 6118 が ${storeName(sid)} に ${total.toLocaleString()}円 一本で計上されています。実契約は各店等額のため部門割りの仕訳誤りの疑い(正: 各店 ${Math.round(total / 2).toLocaleString()}円)。うりぼーへは折半で取込補正しますが、TKC側は税理士に部門修正を依頼してください。`,
+      })
+    }
+  }
+
+  // J5: 集計から除外した仕訳(期中修正=部門振替 / 引当計上=非現金)の一覧。
+  //   「TKCにある数字がうりぼーに来ない」理由を見える化する。期中修正はTKC側が過去月を直した合図なので、
+  //   対象月のうりぼー値が正しいか(--skip で守った値か)を人が一度確認する。引当は情報のみ。
+  {
+    const corrKeys = correctionVoucherKeys(journal, month)
+    const isBeauty = (r: ParsedJournalRowWithTrader) => !!TKC_DEPT_TO_STORE[r.debit_dept] || !!TKC_DEPT_TO_STORE[r.credit_dept]
+    const skipped = journal.filter(r => r.month === month && (corrKeys.has(voucherKey(r)) || isAccrualRow(r)))
+    const corr = skipped.filter(r => corrKeys.has(voucherKey(r)) && isBeauty(r))
+    if (corr.length) {
+      const lines = corr.map(r => `${r.date.slice(5)} ${r.debit_code || '—'}(${r.debit_dept || '—'}) ${r.debit_incl.toLocaleString()} / ${r.credit_code || '—'}(${r.credit_dept || '—'}) ${r.credit_incl.toLocaleString()} ${r.memo}`)
+      findings.push({
+        rule: 'J5', severity: 'warning', group: 'journal', storeId: null,
+        title: `期中修正(部門振替)の仕訳 ${corr.length}行を集計から除外`,
+        detail: `TKC側が過去月の部門付け間違いを当月で修正しています。修正行は当月の費用ではないため取込から外しました。修正対象の月のうりぼー値が正しいか確認してください。\n` + lines.join('\n'),
+      })
+    }
+    const accr = skipped.filter(r => isAccrualRow(r) && TKC_DEPT_TO_STORE[r.debit_dept])
+    if (accr.length) {
+      const total = accr.reduce((s, r) => s + r.debit_incl, 0)
+      findings.push({
+        rule: 'J5', severity: 'warning', group: 'journal', storeId: null,
+        title: `引当計上(非現金) ${accr.length}行 計${total.toLocaleString()}円は取込対象外`,
+        detail: `例: 賞与引当金計上(6213/2126)。年間見込の月割りで現金は動かないため、うりぼー(キャッシュ視点)では費用にしません。実支給の賞与は給与明細から bonus に手入力してください(facts F17)。`,
+      })
+    }
+  }
+
+  // J6: ネット後に負になった集計(貸方=戻しが借方を超えた)。返金だけが翌月にずれた等。取込むと負の経費になる
+  for (const row of rows) {
+    if (row.entry.amount_incl < 0) {
+      findings.push({
+        rule: 'J6', severity: 'warning', group: 'journal', storeId: row.entry.store_id,
+        title: `${row.entry.tkc_code} ${row.entry.tkc_name} がネットで負(${row.entry.amount_incl.toLocaleString()}円)`,
+        detail: `${storeName(row.entry.store_id)}: 貸方(返金・振替)が借方を上回っています。返金だけが翌月にずれた可能性。前月の値と合わせて確認してください。`,
       })
     }
   }
