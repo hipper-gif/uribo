@@ -46,6 +46,11 @@ export type OutsourcingKind = 'twinkle' | 'itaku' | 'other'
  *    6212の給与とは二重にならない(2026-08-14 PX2支給実績・payroll・銀行明細の3点照合で確認)。 */
 export const WADA_FIXED_FEE = 65000
 
+/** Twinkle代のうち介護部門負担分(円/月)。6117が寝屋川に一本計上されている月に (合計−これ)÷2 で各店へ按分する。
+ *  店別計上(65,000/65,000/介護40,000)に移行した月は使わない(buildDraftAssignments の splitBooked 参照)。
+ *  RECON_RULES 'labor' の offsetIncl と同じ値にしておくこと。 */
+export const TWINKLE_KAIGO_DEDUCT = 40000
+
 /** 商店街振興組合費(寝屋川店・円/月)。TKC 6215 地代家賃に「固定費」として家賃と並んで計上される。
  *  ★取引先名も摘要も無い(空欄+「固定費」)ため**金額でしか判別できない**。額が変わったらここを更新。
  *  実測(2026/07): 寝屋川の6215は 121,000(家賃・振込先=ヒガシウチ マサミ)と
@@ -67,21 +72,28 @@ export function classifyOutsourcing(trader: string, memo: string, storeId?: numb
   //   → その場合は下の「守口(store2)のTwinkle名義で本人名なし」救済で itaku に落ちる。
   //   (※「リアライズ」は配食001・訪問介護003の外注経路であって美容ではない。混同しないこと)
   if (/イマミチ|今道|ｲﾏﾐﾁ|コンドウ|ｺﾝﾄﾞｳ|imamichi|kondou?/i.test(s)) return 'itaku'
+  // ★明示タグ / 本人名 → Twinkle代。**金額判定より先**に見る(2026-08-26 順序変更)。
+  //   Twinkle代を税理士/ちょぼまるが店別(65,000/65,000/介護40,000)に部門計上する運用に移ると、
+  //   65,000 の行が和田の定額と同額になり、下の金額判定が Twinkle代を和田委託へ誤判定してしまう。
+  //   仕訳入力側(Clio/ちょぼまる)の摘要規約: 「Twinkle代 寝屋川」「Twinkle代 守口」「Twinkle代 介護」
+  //   (和田は「和田 委託販売手数料」・今道は「今道 …」＝ chobomaru mapping_rules.json 既定)。
+  //   真のTwinkle代の銀行振込名は "W21 テインクル,スギハラ サヤカ" のように本人名入り。
+  const twinkleTag = /twinkle代|ティンクル代|テインクル代|twinkle_fee/i.test(s)
+  const personal = /スギハラ|杉原|ｽｷﾞﾊﾗ|ソウカ|爽夏|ｿｳｶ|サヤカ|ｻﾔｶ/i.test(trader + memo)
+  if (twinkleTag || personal) return 'twinkle'
   // ★金額判定: 和田委託費は定額65,000のため、名義に関わらず金額一致で業務委託に倒す。
   //   「和田」明記もTwinkle名義パターンも当てにならないことが分かったため(2026/05・06連続再発)、
-  //   一番ブレない「金額」を判定に使う。万一の誤判定はプレビューの明細プルダウンで修正できる。
+  //   タグも本人名も無い行の最後の砦として「金額」を使う。万一の誤判定はプレビューの明細プルダウンで修正できる。
   if (amount === WADA_FIXED_FEE) return 'itaku'
-  // 「テインクル」「ティンクル」「twinkle」「スギハラ」「杉原」「ソウカ」「爽夏」を含むなら Twinkle系名義
-  if (/テインクル|ティンクル|ﾃｲﾝｸﾙ|twinkle|スギハラ|杉原|ｽｷﾞﾊﾗ|ソウカ|爽夏|ｿｳｶ/i.test(trader + memo)) {
+  // 「テインクル」「ティンクル」「twinkle」名義(本人名なし)
+  if (/テインクル|ティンクル|ﾃｲﾝｸﾙ|twinkle/i.test(trader + memo)) {
     // ★守口(store 2)で Twinkle名義だが本人名(杉原/爽夏/サヤカ)が無い行は業務委託(和田・今道)とみなす。
     //   摘要への「和田」明記依頼が徹底されず、2026/05・2026/06 と連続で
     //   「Twinkle 委託販売手数料 65,000」(守口・和田明記なし)が再発したためコード側で救済。
     //   今道も商流上は Smiley→Twinkle→今道 のため同じ寄せられ方をし得る(振込自体は本人直だが、
     //   仕訳の取引先名は商流に引かれる)。どちらに倒れても行き先は salary_total で同じ。
-    //   真のTwinkle代は "W21 テインクル,スギハラ サヤカ" のように本人名入りで振込される。
     //   誤判定時はプレビューの明細プルダウン(TkcImport)で手動修正できる。
-    const personal = /スギハラ|杉原|ｽｷﾞﾊﾗ|ソウカ|爽夏|ｿｳｶ|サヤカ|ｻﾔｶ/i.test(trader + memo)
-    if (storeId === 2 && !personal) return 'itaku'
+    if (storeId === 2) return 'itaku'
     return 'twinkle'
   }
   return 'other'
@@ -389,12 +401,25 @@ export function buildDraftAssignments(input: DraftBuilderInput): AssignmentDraft
     const sixEntries = allEntries.filter(e => e.tkc_code === '6117')
     const isPrimaryEntry = sixEntries.every(e => e.store_id >= entry.store_id)
     if (isPrimaryEntry) {
-      const totalTwinkle = sixEntries.reduce((s, e) => s + bdOf(e).twinkle, 0)
+      const twinkleByStore = new Map<number, number>()
+      for (const e of sixEntries) {
+        const t = bdOf(e).twinkle
+        if (t > 0) twinkleByStore.set(e.store_id, (twinkleByStore.get(e.store_id) ?? 0) + t)
+      }
+      const totalTwinkle = [...twinkleByStore.values()].reduce((s, v) => s + v, 0)
       if (totalTwinkle > 0) {
-        const KAIGO_DEDUCT = 40000
-        const perStore = Math.max(0, totalTwinkle - KAIGO_DEDUCT) / 2
+        // ★2つの計上パターンに対応(2026-08-26):
+        //  (a) 一本計上(従来): 寝屋川011に美容全額(例170,000)が1本 → (合計 − 40,000介護按分) ÷ 2 を各店へ
+        //  (b) 店別計上(移行後): 税理士/ちょぼまるが 011に65,000・012に65,000・介護003に40,000 と部門計上
+        //      → 各店の額をそのまま twinkle_fee へ(介護分は美容部門外なので集計に入ってこない)
+        //  両店にTwinkle代が立っていれば(b)とみなす。(b)は摘要「Twinkle代 守口」等のタグが前提
+        //  (タグ無しの守口65,000は和田判定に倒れる → classifyOutsourcing 参照)
+        const splitBooked = twinkleByStore.size >= 2
         for (const sid of [1, 2]) {
-          const tw = mkDraft(sid, 'twinkle_fee', perStore)
+          const amt = splitBooked
+            ? (twinkleByStore.get(sid) ?? 0)
+            : Math.max(0, totalTwinkle - TWINKLE_KAIGO_DEDUCT) / 2
+          const tw = mkDraft(sid, 'twinkle_fee', amt)
           if (tw) drafts.push(tw)
         }
       }

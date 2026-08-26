@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useStores, useItemMaster, useMonthlyData, useMonthlyMeta } from '../lib/useBeautyData'
 import { apiGet, apiPost, apiPatch } from '../lib/api'
-import { FISCAL_MONTHS, MONTH_LABELS, TARGET_FIXED_COPY_CATEGORIES, TARGET_VARIABLE_CATEGORIES, currentFiscalYear, formatPercent, formatMan, formatAmount } from '../lib/types'
+import { FISCAL_MONTHS, MONTH_LABELS, TARGET_FIXED_COPY_CATEGORIES, TARGET_VARIABLE_CATEGORIES, currentFiscalYear, formatPercent, formatMan, formatAmount, calcDerivedAmount } from '../lib/types'
 import type { BeautyMonthlyData, BeautyMonthlyMeta, DataType } from '../lib/types'
 import { fetchBeautyStaff, type MnemeEmployee } from '../lib/mnemeApi'
 
@@ -261,6 +261,33 @@ export function TargetSetting() {
         ? await apiPatch('beauty_monthly_data', { id: `eq.${existing.id}` }, { amount })
         : await apiPost('beauty_monthly_data', { store_id: storeId, fiscal_year: fiscalYear, month: mm, data_type: dataType, item_id: iid, amount })
       res.error ? errors++ : saved++
+    }
+
+    // 派生項目(預かり税=納付消費税・仕入消費税)の目標を、保存後の目標値から自動算出して書く(DataEntryの実績保存と同じ式)。
+    // ★これが無いと「税金」区分の目標が空のまま実績にだけ乗り、区分の達成率が意味を失う(2026-08-26 杉原氏指摘:
+    //   旧・法定費用区分で 目標=法定福利費のみ / 実績=法定福利費+預かり税 となり 170%超に見えていた)。
+    const DERIVED_TARGET_CODES = ['withholding_tax', 'vat_purchase']
+    const derivedItems = items.filter(i => i.is_active === 1 && DERIVED_TARGET_CODES.includes(i.item_code))
+    for (const mm of FISCAL_MONTHS) {
+      const codeValues: Record<string, number> = {}
+      for (const it of items) {
+        if (it.is_active !== 1) continue
+        const key = cellKey(it.id, mm)
+        const raw = editValues[key] !== undefined ? editValues[key] : (dataLookup[key]?.amount ?? '')
+        codeValues[it.item_code] = parseFloat(raw || '0') || 0
+      }
+      for (const it of derivedItems) {
+        const derived = calcDerivedAmount(it.item_code, codeValues)
+        if (derived === null) continue
+        const amount = Math.round(derived)
+        const existing = dataLookup[cellKey(it.id, mm)]
+        if (existing && Math.abs(parseFloat(existing.amount) - amount) < 1) continue
+        if (!existing && amount === 0) continue
+        const res = existing
+          ? await apiPatch('beauty_monthly_data', { id: `eq.${existing.id}` }, { amount })
+          : await apiPost('beauty_monthly_data', { store_id: storeId, fiscal_year: fiscalYear, month: mm, data_type: dataType, item_id: it.id, amount })
+        res.error ? errors++ : saved++
+      }
     }
 
     for (const mm of changedMetaMonths()) {

@@ -23,7 +23,7 @@ import {
 } from '../src/lib/tkcImport'
 import { auditImport, type AuditFinding } from '../src/lib/tkcAudit'
 import { formatAmount, calcDerivedAmount } from '../src/lib/types'
-import type { BeautyItemMaster, BeautyMonthlyData, BeautyStore } from '../src/lib/types'
+import type { BeautyItemMaster, BeautyMonthlyData, BeautyStore, DataType } from '../src/lib/types'
 
 // ── 接続情報(環境変数で上書き可。既定値は uribo/CLAUDE.md 記載の共有値) ──
 const SSH_HOST = process.env.URIBO_SSH_HOST ?? 'twinklemark@sv16114.xserver.jp'
@@ -33,7 +33,8 @@ const DB_NAME = process.env.URIBO_DB_NAME ?? 'twinklemark_nicolio'
 const DB_USER = process.env.URIBO_DB_USER ?? 'twinklemark_app'
 const DB_PASS = process.env.URIBO_DB_PASS ?? 'twinkle2525'
 
-const DATA_TYPE = '実績'
+/** 書き込み対象の data_type。TKC取込は常に実績。--recalc-only のときだけ --data-type 目標 で目標側の預かり税も検算できる */
+let DATA_TYPE: DataType = '実績'
 
 // ═══════════════════ 引数 ═══════════════════
 
@@ -45,6 +46,8 @@ interface Args {
   force: boolean
   /** CSVを使わず、DBの現在値から預かり税だけ検算・是正する */
   recalcOnly: boolean
+  /** --recalc-only 専用: 検算する data_type(既定 実績) */
+  dataType?: DataType
   /** 取込から外すTKC科目コード(その月のTKC仕訳が明らかに間違っているとき) */
   skip: string[]
 }
@@ -59,6 +62,11 @@ function parseArgs(argv: string[]): Args {
     else if (k === '--apply') a.apply = true
     else if (k === '--force') a.force = true
     else if (k === '--recalc-only') a.recalcOnly = true
+    else if (k === '--data-type') {
+      const v = argv[++i]
+      if (v !== '実績' && v !== '目標' && v !== '見通し') throw new Error(`--data-type は 実績/目標/見通し のいずれか: ${v}`)
+      a.dataType = v
+    }
     else if (k === '--skip') a.skip = (argv[++i] ?? '').split(',').map(x => x.trim()).filter(Boolean)
     else if (k === '--help' || k === '-h') { usage(); process.exit(0) }
     else throw new Error(`不明な引数: ${k}`)
@@ -67,6 +75,7 @@ function parseArgs(argv: string[]): Args {
     if (!a.month || !a.year) { usage(); throw new Error('--recalc-only は --year と --month が必須です') }
     return a
   }
+  if (a.dataType && a.dataType !== '実績') throw new Error('--data-type は --recalc-only と組み合わせたときだけ使えます(TKC取込は常に実績)')
   if (!a.csv) { usage(); throw new Error('--csv <仕訳帳CSVのパス> は必須です') }
   return a
 }
@@ -86,9 +95,11 @@ TKC仕訳帳CSV → うりぼー反映CLI
            その月のTKC仕訳自体が間違っている(部門の付け間違い等)ときに使い、
            うりぼー側の正しい値を守る。同時に税理士へ仕訳修正を依頼すること
 
-  npm run tkc-import -- --recalc-only --year 2026 --month 6 [--apply]
+  npm run tkc-import -- --recalc-only --year 2026 --month 6 [--data-type 目標] [--apply]
   --recalc-only  CSVを使わず、DBの現在値から預かり税(=納付税額)だけ検算・是正する
                  (過去にTKC取込だけしてDataEntryで再保存しなかった月の穴埋め)
+  --data-type    --recalc-only で検算する data_type(実績/目標/見通し。既定 実績)。
+                 目標は TargetSetting の保存時にも自動算出されるが、保存を経ていない年度の穴埋めに使う
 `)
 }
 
@@ -459,13 +470,14 @@ SELECT ROW_COUNT();
 async function runRecalcOnly(args: Args) {
   const fiscalYear = args.year!
   const month = args.month!
-  console.log(`━━━ 預かり税の検算 ${fiscalYear}年度 ${month}月 ` + (args.apply ? '(是正モード)' : '(dry-run)') + ' ━━━')
+  if (args.dataType) DATA_TYPE = args.dataType
+  console.log(`━━━ 預かり税の検算 ${fiscalYear}年度 ${month}月 ${DATA_TYPE} ` + (args.apply ? '(是正モード)' : '(dry-run)') + ' ━━━')
 
   const snap = await fetchSnapshot(fiscalYear)
   const storeNameOf = (id: number) => snap.stores.find(s => s.id === id)?.name ?? `店${id}`
   const itemById = new Map(snap.items.map(i => [i.id, i]))
   const existing = snap.history.filter(d => d.fiscal_year === fiscalYear && d.month === month)
-  if (existing.length === 0) throw new Error(`${fiscalYear}年度${month}月の実績データがありません`)
+  if (existing.length === 0) throw new Error(`${fiscalYear}年度${month}月の${DATA_TYPE}データがありません`)
   const storeIds = snap.stores.filter(s => s.is_active).map(s => s.id)
 
   const writes = buildDerivedWrites(storeIds.length ? storeIds : [1, 2], snap.items, existing, [], itemById)

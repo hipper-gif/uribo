@@ -2,7 +2,8 @@ export type ItemCategory =
   | '売上'
   | '変動費'      // 売上連動: cogs, supplies, fees
   | '人件費'      // 給料系: salary_total, bonus, recruitment, training, welfare, commute_allowance, transport_total
-  | '法定費用'    // 強制(削減不可): legal_welfare, workers_comp, 税金系
+  | '法定費用'    // 強制(削減不可): legal_welfare, workers_comp
+  | '税金'        // 消費税(預かり税=納付税額 withholding_tax, 参考行 vat_purchase/net_payable_tax)。売上連動で法定福利費とは性質が違うため分離(2026-08-26)
   | '契約固定費'  // 月額固定・契約縛り: rent, franchise_fee, insurance, shopping_street (depreciationは非アクティブ)
   | 'インフラ'    // 事業基盤(集客含む): electricity, gas, water_utility, communication, garbage, hpb
   | 'サブスク'    // 月額固定・解約容易: microsoft, spotify, amazon_prime, water_supply
@@ -41,7 +42,7 @@ export interface BeautyMonthlyMeta {
 }
 
 export const EXPENSE_CATEGORIES: ItemCategory[] = [
-  '変動費', '人件費', '法定費用', '契約固定費', 'インフラ', 'サブスク', 'スポット費用', '管理費', 'その他'
+  '変動費', '人件費', '法定費用', '税金', '契約固定費', 'インフラ', 'サブスク', 'スポット費用', '管理費', 'その他'
 ]
 export const MGMT_FEE_CODE = 'twinkle_fee'
 
