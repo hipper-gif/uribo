@@ -265,6 +265,73 @@ def _parse_by_coords(pdf_path: Path) -> list[dict]:
     return results
 
 
+
+def parse_payslip_csv(csv_path: Path, year: int, month: int) -> list[dict]:
+    """TKC FXクラウド「支給実績の切出」レイアウト0002(全項目)CSV から、PDFパースと同じ構造を組み立てる。
+    (2026-09-09 追加: クラウド版の給与支払明細書PDFは旧PX2形式と違い _parse_by_coords で読めないため)
+    対象行 = 部署コード 002(美容) かつ 支給日が (year, month) の翌月。
+    """
+    import csv as _csv
+    pay_y, pay_m = (year, month + 1) if month < 12 else (year + 1, 1)
+    with open(csv_path, encoding="utf-8-sig", newline="") as f:
+        rows = list(_csv.reader(f))
+    h = rows[0]
+    idx = {c: i for i, c in enumerate(h)}
+
+    def col(row, name: str) -> int:
+        i = idx.get(name)
+        if i is None or i >= len(row) or row[i] == "":
+            return 0
+        return int(round(float(row[i])))
+
+    def sum_by_label(row, label_re: str, lo: int, hi: int) -> int:
+        tot = 0
+        for i in range(lo, min(hi, len(row))):
+            if re.search(label_re, h[i]) and row[i] != "":
+                tot += int(round(float(row[i])))
+        return tot
+
+    pay_lo, pay_hi = idx["0001 役員報酬"], idx["9904 定期除く通勤手当"]
+    ded_lo, ded_hi = idx["0001 健保(一般)"], idx["9900 控除合計"]
+    results = []
+    for row in rows[1:]:
+        if len(row) < len(h) or row[idx["部署コード"]] != "002":
+            continue
+        m = re.match(r"(\d{4})年(\d{1,2})月(\d{1,2})日", row[idx["支給日"]])
+        if not m or (int(m.group(1)), int(m.group(2))) != (pay_y, pay_m):
+            continue
+        work_days = col(row, "0003 平日出勤") + col(row, "0004 休日出勤")
+        wh = row[idx["0005 出勤時間"]]
+        rec = {
+            "tkc_code": row[idx["社員番号"]].lstrip("0").zfill(6),
+            "name": row[idx["社員氏名"]].replace("　", " ").strip(),
+            "base_salary": sum_by_label(row, r"^\d{4} 基本給", pay_lo, pay_hi),
+            # 旧PDFパーサは col3(職務手当)を position_allowance に読んでいた（美容店長手当=TKC職務手当3万）。同じ意味に揃える
+            "position_allowance": sum_by_label(row, r"^\d{4} (役職手当|職務手当)$", pay_lo, pay_hi),
+            "nomination_allowance": sum_by_label(row, r"^\d{4} 指名報酬$", pay_lo, pay_hi),
+            "commission_amount": sum_by_label(row, r"^\d{4} 売上達成金$", pay_lo, pay_hi),
+            "perfect_attendance_amount": sum_by_label(row, r"^\d{4} 皆勤手当$", pay_lo, pay_hi),
+            "reimbursement": sum_by_label(row, r"^\d{4} 立替金$", ded_lo, ded_hi),
+            "taxable_gross": col(row, "9907 課税支給額"),
+            # 9904 は 9906(非課税通勤手当) の内訳なので足さない
+            "transit_amount": col(row, "9905 課税通勤手当") + col(row, "9906 非課税通勤手当"),
+            "gross_total": col(row, "9908 支給合計"),
+            "net_payment": col(row, "9902 差引支給額"),
+            "health_insurance": col(row, "0001 健保(一般)") + col(row, "0004 健保(介護)"),
+            "pension_insurance": col(row, "0005 厚生年金"),
+            "employment_insurance": col(row, "0008 雇用保険"),
+            "social_insurance_total": col(row, "0009 社会保険計"),
+            "income_tax": col(row, "0011 所得税"),
+            "resident_tax": col(row, "0012 住民税"),
+            "work_days": float(work_days) if work_days else None,
+            "work_hours": float(wh) if wh != "" else None,
+        }
+        if not rec["transit_amount"] and rec["gross_total"] and rec["taxable_gross"]:
+            rec["transit_amount"] = rec["gross_total"] - rec["taxable_gross"]
+        results.append(rec)
+    return results
+
+
 def _parse_text_legacy(pdf_path: Path) -> list[dict]:
     """旧テキストベース実装(参照用、未使用)。"""
     text_all = ""
@@ -702,7 +769,9 @@ def format_yen(n: int) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="TKC PX2 給与明細PDF と DB を突合")
-    parser.add_argument("pdf", type=Path, help="給与明細PDFパス")
+    parser.add_argument("pdf", type=Path, help="給与明細PDFパス（.csv なら FXクラウド 支給実績の切出 0002全項目CSV）")
+    parser.add_argument("--pdf-file", type=Path, default=None,
+        help="CSV入力時に --apply でサーバーへ保存する明細PDF（省略時はPDF保存なし・tkc_pdf_filenameはCSV名）")
     parser.add_argument("--month", help="対象月 YYYY-MM（省略時はファイル名から推定 or 当月）")
     parser.add_argument("--json", action="store_true", help="JSON形式で出力")
     parser.add_argument("--apply", action="store_true",
@@ -733,7 +802,10 @@ def main():
     print(f"=== TKC明細 ⇄ DB 突合 ({year}-{month:02d}) ===\n")
     print(f"PDF: {args.pdf}")
 
-    pdf_records = parse_payslip_pdf(args.pdf)
+    if args.pdf.suffix.lower() == ".csv":
+        pdf_records = parse_payslip_csv(args.pdf, year, month)
+    else:
+        pdf_records = parse_payslip_pdf(args.pdf)
     if not pdf_records:
         sys.exit("PDFから明細を1件も抽出できませんでした")
     print(f"PDF抽出: {len(pdf_records)}名\n")
@@ -883,7 +955,11 @@ def main():
         print(json.dumps(all_results, ensure_ascii=False, indent=2))
 
     if args.apply:
-        apply_to_db(year, month, pdf_records, alias_map, args.pdf.name, args.pdf)
+        if args.pdf.suffix.lower() == ".csv":
+            apply_to_db(year, month, pdf_records, alias_map,
+                        (args.pdf_file.name if args.pdf_file else args.pdf.name), args.pdf_file)
+        else:
+            apply_to_db(year, month, pdf_records, alias_map, args.pdf.name, args.pdf)
 
 
 if __name__ == "__main__":
