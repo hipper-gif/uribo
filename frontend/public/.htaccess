@@ -1,8 +1,12 @@
+# Nicolioセッションゲート（ADR-0003・2026-09-15）: 入口を index.php に一本化
+DirectoryIndex index.php
 RewriteEngine On
 RewriteBase /uribo/
+# index.html 直叩きもゲート経由にする（ブックマークでの素通し防止）
+RewriteRule ^index\.html$ /uribo/index.php [L]
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule . /uribo/index.html [L]
+RewriteRule . /uribo/index.php [L]
 
 # index.html はキャッシュしない(コンテンツハッシュ付きJSへの参照を確実に更新)
 <Files "index.html">
