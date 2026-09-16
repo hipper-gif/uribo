@@ -7,6 +7,7 @@ import { DataEntry } from './pages/DataEntry'
 import { TargetSetting } from './pages/TargetSetting'
 import { Payroll } from './pages/Payroll'
 import { TkcCompare } from './pages/TkcCompare'
+import GradeTable from './pages/GradeTable'
 
 // ボトムタブ用ラインアイコン(上部の印刷アイコンと同じストローク言語。currentColorでアクティブ色追従)
 const svgProps = {
@@ -34,6 +35,7 @@ const NAV = [
   { to: '/entry', label: '入力', idx: '04' },
   { to: '/targets', label: '目標', idx: '05' },
   { to: '/payroll', label: '給与', idx: '06' },
+  { to: '/grades', label: '等級', idx: '07' },
 ]
 
 // 管理者専用ナビ(?admin=1 で表示)
@@ -132,6 +134,7 @@ export default function App() {
             <Route path="/entry" element={<DataEntry />} />
             <Route path="/targets" element={<TargetSetting />} />
             <Route path="/payroll" element={<Payroll />} />
+            <Route path="/grades" element={<GradeTable />} />
             <Route path="/tkc-compare" element={<TkcCompare />} />
           </Routes>
         </main>
