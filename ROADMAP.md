@@ -20,3 +20,6 @@ TKC 6215 地代家賃に「固定費」として家賃と並んで計上され�
 - **実装**: calc_payroll（beauty_payroll_monthly生成）に個人ルールとして追加。出力先は通常の給与draftと分け、**リアライズ支給額**として明示（PochiClock realize_manual_entries への連携が理想＝PX2取込CSVがリアライズ分を自動差引する既存機構に乗る）
 - **当面の運用**: 月初にClioが beauty_staff_raw の売上×50%を手計算して PochiClock リアライズ手入力に登録（2026-07分=21,400×50%=10,700円で初運用）
 - 給与月次フロー全体の正本 = clio `projects/payroll-monthly.md`
+
+## 2026-09-16 追加
+- [ ] data_type「目標修正」のUI対応（TargetSetting.tsx の編集切替と年間成績/月次成績の表示切替に追加。DB enumは拡張済み・FY2026下半期の目標修正/見通しデータ登録済み。背景=下半期の目標見直しで「期初目標を残したまま修正目標を持つ」運用を開始）
