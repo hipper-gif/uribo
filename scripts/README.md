@@ -94,3 +94,24 @@ KLP/top に到達しない場合に手動介入待ちになります:
 - サロンボードは公式 API なし。HTML 構造が変わると壊れる
 - ログイン後にキャプチャを要求されるケースは未対応（出たら手動で通す）
 - 同月の `実績` レコードを上書きする。既に手入力した値は保持されない（`amount` のみ更新、`notes` は触らない）
+
+## import_bonus.py — 賞与（Nicolio 保管の TKC 賞与CSV）→ Uribo bonus 実績
+
+賞与は TKC 仕訳帳からは入らず（6213は引当のみ）、給与明細PDFにも載らない。
+Nicolio の明細機能が保管する TKC 切出CSV「0003 賞与全項目(Clio明細用)」
+（`~/twinklemark.xsrv.jp/private/payslips/`・DB保存なし）を SSH 経由で読み、
+美容事業部（部署コード 002）の行を `salonboard_staff_alias.tkc_code` で店舗に解決して
+店舗合計を `beauty_monthly_data`（bonus=item_id 8・実績）へ UPSERT する。
+
+```bash
+cd scripts
+python import_bonus.py                        # dry-run（最新CSVの美容賞与を一覧・書き込まない）
+python import_bonus.py --pay-date 2026-10-09  # 支給日を指定（既定=美容行がある最新の支給日）
+python import_bonus.py --month 2026-09        # 反映月を明示（既定=支給日の前月）
+python import_bonus.py --apply                # 書き込む
+```
+
+- 前提: `~/.ssh/id_xserver_panel`（サーバー上で Nicolio の `TkcPayslipCsv.php` を実行する。パーサは再実装しない）
+- 反映月の既定は支給日の前月（給与と同じ「前月分を翌月10日支給」）。月末支給のときは `--month` を明示
+- 店舗に解決できない社員番号があると書き込まない（alias に tkc_code を登録してから再実行）
+- 個人別の記録・皆勤積立の精算は未実装（ROADMAP 2026-10-13）
