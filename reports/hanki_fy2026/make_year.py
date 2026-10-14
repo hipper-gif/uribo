@@ -164,17 +164,31 @@ def chart(D, title):
             f'<span style="margin-left:10px">月の下の数字＝残った利益（下半期は計画）</span></span></div>{"".join(o)}</div>')
 
 
+# 賞与: (上半期に計上済みの実績, 下半期の仮置き＝上半期と同額＋会社負担の社保 約14%)
+BONUS = {"寝屋川店": (13.5, 15.4), "守口店": (8.5, 9.7), "部門計（寝屋川＋守口）": (22.0, 25.1)}
+
+
+def rsum(D1, D2, months):
+    """部門計の半期合計＝店ごとの半期合計を丸めてから足す（本文の 138.5＋27.1＝165.6 と揃える）"""
+    x, y = sums(D1, months), sums(D2, months)
+    return {k: None if x[k] is None else round(x[k] + 1e-9, 1) + round(y[k] + 1e-9, 1) for k in x}
+
+
 def sheet(title, D):
-    a, b = sums(D, H1), sums(D, H2)
+    b1, b2 = BONUS[title]
+    if D is d3:
+        a, b = rsum(d1, d2, H1), rsum(d1, d2, H2)
+    else:
+        a, b = sums(D, H1), sums(D, H2)
     tot = {k: (a[k] + b[k] if a[k] is not None and b[k] is not None else None) for k in a}
     fc = {"ly_sales": tot["ly_sales"], "tgt_sales": tot["tgt_sales"], "sales": a["sales"] + b["tgt_sales"], "ly_profit": tot["ly_profit"],
           "plan_profit": tot["plan_profit"], "profit": a["profit"] + b["plan_profit"]}
     ach = a["sales"] / a["tgt_sales"] * 100
     tiles = f'''<div class="tiles">
       <div class="tile"><div class="l">上半期 売上</div><div class="n">{a["sales"]:,.0f}<small>万</small></div><div class="l">目標 {a["tgt_sales"]:,.0f}万 → <b class="{"ok" if ach>=100 else "under"}">{ach:.1f}%</b>・前年比 {a["sales"]/a["ly_sales"]*100:.0f}%</div></div>
-      <div class="tile"><div class="l">上半期 純利益 ＝ 売上 {a["sales"]:,.0f} − 経費 {a["sales"]-a["profit"]:,.0f}</div><div class="n {"good" if a["profit"]>=0 else "bad"}">{f1(a["profit"])}<small>万</small></div><div class="l">期初の計画 {a["plan_profit"]:,.0f}万（経費 {a["tgt_sales"]-a["plan_profit"]:,.0f}） → <b class="{"ok" if a["profit"]>=a["plan_profit"] else "under"}">{a["profit"]/a["plan_profit"]*100:.0f}%</b></div></div>
-      <div class="tile t"><div class="l">下半期 売上目標（10/1 下期修正）</div><div class="n">{b["tgt_sales"]:,.0f}<small>万</small></div><div class="l">期初 {b["init_sales"]:,.0f}万 → 修正 <b class="{"ok" if b["tgt_sales"]>=b["init_sales"] else "under"}">{"+" if b["tgt_sales"]>=b["init_sales"] else "−"}{abs(b["tgt_sales"]-b["init_sales"]):,.0f}万</b></div><div class="l">経費 {b["tgt_sales"]-b["plan_profit"]:,.0f}万 → 純利益 <b>{b["plan_profit"]:,.0f}万</b></div></div>
-      <div class="tile y"><div class="l">通期の見込み（実績＋下半期目標）／期初目標 {tot["init_sales"]:,.0f}万</div><div class="n">{fc["sales"]:,.0f}<small>万</small></div><div class="l">経費 {fc["sales"]-fc["profit"]:,.0f}万 → 純利益 <b class="good">{fc["profit"]:,.0f}万</b>（前年 売上{tot["ly_sales"]:,.0f}／利益{f1(tot["ly_profit"])}）</div></div>
+      <div class="tile"><div class="l">上半期 純利益 ＝ 売上 {a["sales"]:,.0f} − 経費 {a["sales"]-a["profit"]:,.0f}</div><div class="n {"good" if a["profit"]>=0 else "bad"}">{f1(a["profit"])}<small>万</small></div><div class="l">期初の計画 {a["plan_profit"]:,.0f}万（経費 {a["tgt_sales"]-a["plan_profit"]:,.0f}） → <b class="{"ok" if a["profit"]>=a["plan_profit"] else "under"}">{a["profit"]/a["plan_profit"]*100:.0f}%</b></div><div class="l">賞与前は {f1(a["profit"]+b1)}万（9月に賞与 {b1:.1f}万を計上）</div></div>
+      <div class="tile t"><div class="l">下半期 売上目標（10/1 下期修正）</div><div class="n">{b["tgt_sales"]:,.0f}<small>万</small></div><div class="l">期初 {b["init_sales"]:,.0f}万 → 修正 <b class="{"ok" if b["tgt_sales"]>=b["init_sales"] else "under"}">{"+" if b["tgt_sales"]>=b["init_sales"] else "−"}{abs(b["tgt_sales"]-b["init_sales"]):,.0f}万</b></div><div class="l">経費 {b["tgt_sales"]-b["plan_profit"]:,.0f}万 → 純利益 <b>{b["plan_profit"]:,.0f}万</b>（賞与前）</div><div class="l">下半期も賞与を出すと 約{b["plan_profit"]-b2:,.0f}万</div></div>
+      <div class="tile y"><div class="l">通期の見込み（実績＋下半期目標）／期初目標 {tot["init_sales"]:,.0f}万</div><div class="n">{fc["sales"]:,.0f}<small>万</small></div><div class="l">経費 {fc["sales"]-fc["profit"]:,.0f}万 → 純利益 <b class="good">{fc["profit"]:,.0f}万</b>（下半期は賞与前）</div><div class="l">下半期も賞与を出すと 約{fc["profit"]-b2:,.0f}万（前年 売上{tot["ly_sales"]:,.0f}／利益{f1(tot["ly_profit"])}）</div></div>
     </div>'''
     h = [f'<section class="sheet"><div class="sheet-h"><h2>{title}</h2><div class="sub">FY2026（2026年4月〜2027年3月）・万円</div></div>', tiles, chart(D, title),
          '<table><thead><tr><th rowspan="2" class="name">月</th><th colspan="5" class="g1">売上</th><th colspan="3" class="g2">経費（割引込み）</th><th colspan="3" class="g3">純利益 ＝ 売上 − 経費</th></tr>'
@@ -188,8 +202,10 @@ def sheet(title, D):
     h.append(f'<tr class="year"><td class="name">通期（見込み）</td>{td(tot["ly_sales"], "ref")}{td(tot["init_sales"])}{rev(tot)}{td(fc["sales"], "act")}{pct(fc["sales"], tot["tgt_sales"])}'
              f'{td(exp(tot["ly_sales"], tot["ly_profit"]), "ref")}{td(exp(tot["tgt_sales"], tot["plan_profit"]))}{td(exp(fc["sales"], fc["profit"]), "act")}'
              f'{td(tot["ly_profit"], "ref")}{td(tot["plan_profit"])}{td(fc["profit"], "prof")}</tr>')
+    h.append(f'<tr class="aft"><td class="name">通期（下半期も賞与を出す場合）</td><td colspan="9" class="note">下半期の賞与を上半期と同額＋会社負担の社保で仮置き（{b2:.1f}万）して差し引いた純利益 →</td>'
+             f'{td(tot["plan_profit"]-b2)}{td(fc["profit"]-b2, "prof")}</tr>')
     h.append("</tbody></table>")
-    h.append('<p class="foot">経費＝割引・人件費・家賃・HPB・仕入・水道光熱・減価償却など全部（割引を含むので 売上 − 経費 ＝ 純利益）。売上目標: 上半期＝期初目標。下半期は10/1に見直し（「下期修正」列＝修正後の目標と期初からの差。達成率・経費・純利益の計画は修正後の目標に対するもの）。純利益の計画: 上半期＝期初にうりぼーへ登録した計画、下半期＝10/1確定の損益モデル（変動費率と固定費/月）を月に展開したもの（下半期分の賞与・求人費・外注費は含まない）。'
+    h.append('<p class="foot">経費＝割引・人件費・家賃・HPB・仕入・水道光熱・減価償却など全部（割引を含むので 売上 − 経費 ＝ 純利益）。売上目標: 上半期＝期初目標。下半期は10/1に見直し（「下期修正」列＝修正後の目標と期初からの差。達成率・経費・純利益の計画は修正後の目標に対するもの）。純利益の計画: 上半期＝期初にうりぼーへ登録した計画、下半期＝10/1確定の損益モデル（変動費率と固定費/月）を月に展開したもの（<b>下半期分の賞与・求人費・外注費は含まない＝賞与前</b>。最下行で下半期の賞与を仮置きして差し引いた見込みを併記）。'
              '純利益は減価償却6.4万円/月・店を含み、消費税の預かり・納付は別枠。9月の実績利益は10/9支給の上半期賞与を計上後。通期（見込み）の売上・純利益＝上半期実績＋下半期目標。</p></section>')
     return "".join(h)
 
@@ -242,6 +258,7 @@ header('Cache-Control: no-cache, no-store, must-revalidate');
   tr.t td {{ background:var(--tg); color:var(--ink-2); }} tr.t td.ref {{ background:#eceee9; }} tr.t td.prof {{ background:#dfe9f7; color:var(--ink-2); font-weight:600; }}
   tr.total td {{ font-weight:700; background:#f7f6f2; border-top:2px solid #b9b8ae; }}
   tr.total.t td {{ background:#e3eaf3; color:var(--ink); }}
+  tr.aft td {{ color:var(--ink-2); font-size:.92em; }} tr.aft td.note {{ text-align:right; font-size:.8em; }} tr.aft td.prof {{ color:var(--ink); font-weight:600; }}
   tr.year td {{ font-weight:700; background:#efede6; border-top:2px solid var(--new); border-bottom:2px solid var(--new); }}
   td.ok {{ color:var(--good); font-weight:600; }} td.under {{ color:var(--down); }}
   td.minus {{ color:var(--down); }} td.z {{ color:var(--muted); }}
