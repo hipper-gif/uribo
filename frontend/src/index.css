@@ -777,6 +777,19 @@ input { font-family: inherit; }
 .rp-table tr.sub td.nm { color: var(--ink-3); }
 .rp-table td.prof { background: var(--target-soft); }
 
+/* 報告セット: 科目別×月（年間成績一覧と同じ形） */
+.rp-table.ymx { font-size: 11.5px; }
+.rp-table.ymx th, .rp-table.ymx td { padding: 3px 5px; vertical-align: top; }
+.rp-table.ymx td .ach { display: block; font-size: 9.5px; line-height: 1.2; }
+.rp-table.ymx td.planv { color: var(--ink-4); font-style: italic; }
+.rp-table.ymx .hlc { background: oklch(0.975 0.025 80); }
+.rp-table.ymx th.tot, .rp-table.ymx td.tot { background: var(--paper-2); font-weight: 600; }
+.rp-table.ymx td.tot.planv { font-weight: 400; }
+.rp-table.ymx td.avg { color: var(--ink-3); font-weight: 400; }
+.rp-table.ymx tr.cost td.nm { padding-left: 12px; }
+.rp-table.ymx tr.rate td { color: var(--ink-2); font-size: 10.5px; }
+.chip-s { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 8px; background: var(--paper-3); color: var(--ink-3); font-size: 9.5px; font-weight: 500; }
+
 /* 印刷ボタン（トップバー右） */
 .print-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -850,6 +863,9 @@ input { font-family: inherit; }
   .rp-table th, .rp-table td { padding: 2px 5px !important; }
   .rp-kv b { font-size: 18px !important; }
   .rp .page-head { display: none !important; }
+  .rp-table.ymx { font-size: 9.5px !important; }
+  .rp-table.ymx th, .rp-table.ymx td { padding: 1px 3px !important; }
+  .rp-table.ymx td .ach { font-size: 8px !important; }
   .rp-cover { grid-template-columns: 1.15fr 1fr 1fr !important; gap: 8px !important; }
   .rp-card { padding: 8px 10px !important; break-inside: avoid; }
   .rp-blk { padding: 5px 0 !important; }
