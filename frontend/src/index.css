@@ -733,27 +733,70 @@ input { font-family: inherit; }
 .helper-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .helper-input[type=number] { -moz-appearance: textfield; }
 
-/* Print styles */
+/* 印刷ボタン（トップバー右） */
+.print-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 12px; border-radius: var(--radius);
+  border: 1px solid var(--rule); background: var(--paper);
+  color: var(--ink-2); font-size: 12.5px; font-weight: 500; cursor: pointer;
+}
+.print-btn:hover { background: var(--paper-3); color: var(--ink); }
+
+/* Print styles — 表示中の画面をA4横で刷る（2026-10-15 作り直し）
+   ・表の枠の「画面の高さまで」の上限を外す（旧版は下の行が切れていた）
+   ・スマホ用の下タブ帯・ボタン類・入力の枠を消す
+   ・表の見出しはページをまたいでも毎ページ繰り返す */
+.print-stamp { display: none; }
 @media print {
-  @page { size: landscape; margin: 8mm; }
-  .topbar, .savebar, .filter-bar, .helper-details, .month-strip, .btn { display: none !important; }
-  .page { padding: 0 !important; max-width: none !important; }
-  .card { box-shadow: none !important; border: 1px solid #ddd !important; break-inside: avoid; }
-  .sticky, [style*="sticky"] { position: static !important; }
-  .ltable { font-size: 8px !important; width: 100% !important; table-layout: fixed; }
-  .ltable thead th { position: static !important; padding: 3px 2px !important; }
-  .ltable td, .ltable th { padding: 3px 2px !important; }
-  .ltable th.col-label, .ltable td.col-label { position: static !important; width: 80px !important; }
-  .ltable .tot-col { width: auto !important; }
-  .table-scroll, .overflow-x-auto, [style*="overflow"] { overflow: visible !important; }
-  .cell-input { border: none !important; background: none !important; box-shadow: none !important;
-    font-size: 8px !important; padding: 0 1px !important; height: auto !important; }
-  .cell-input:focus { box-shadow: none !important; }
-  .meta-textarea { border: none !important; background: none !important; font-size: 7px !important; resize: none !important; }
+  @page { size: A4 landscape; margin: 9mm 10mm; }
+  html, body, .app { background: #fff !important; min-height: 0 !important; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  .kpi-grid { grid-template-columns: repeat(4, 1fr); }
-  .kpi { padding: 8px !important; }
-  .card-head { padding: 6px 10px !important; }
+
+  .topbar, .bottom-tabs, .savebar, .filter-bar, .helper-details, .month-strip,
+  .btn, .icon-btn, .print-btn, .no-print, .payroll-help,
+  .payroll-btn-primary, .payroll-btn-secondary, .payroll-store-note-actions, .payroll-table-actions { display: none !important; }
+
+  .print-stamp {
+    display: flex !important; justify-content: space-between;
+    font-size: 9px; color: #777; border-bottom: 1px solid #ccc;
+    padding-bottom: 3px; margin-bottom: 8px;
+  }
+  .page { padding: 0 !important; max-width: none !important; margin: 0 !important; }
+  .page-head { margin-bottom: 8px !important; padding-bottom: 6px !important; }
+  .page-title { font-size: 18px !important; }
+
+  .card { box-shadow: none !important; border: 1px solid #ccc !important; overflow: visible !important; margin-bottom: 8px; }
+  .card-head { padding: 5px 10px !important; }
+  .kpi-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 6px !important; }
+  .kpi, .kpi-grid, .payroll-card { break-inside: avoid; }
+  .kpi { padding: 6px 10px !important; }
+
+  .sticky, [style*="sticky"] { position: static !important; }
+  .table-scroll, .overflow-x-auto, [style*="overflow"] {
+    overflow: visible !important; max-height: none !important; min-height: 0 !important;
+  }
+  .ltable { font-size: 10px !important; width: 100% !important; }
+  .ltable thead { display: table-header-group; }
+  .ltable tr { break-inside: avoid; }
+  .ltable thead th { position: static !important; font-size: 9px !important; }
+  .ltable th, .ltable td { padding: 2px 5px !important; height: auto !important; }
+  .ltable th.col-label, .ltable td.col-label { position: static !important; min-width: 0 !important; font-size: 10px !important; }
+  .cell-input { border: none !important; background: none !important; box-shadow: none !important;
+    font-size: 10px !important; padding: 0 1px !important; height: auto !important; }
+  .meta-textarea { border: none !important; background: none !important; font-size: 9px !important; resize: none !important; }
+  textarea { border: none !important; resize: none !important; }
+
+  /* gridのままだと1行ごとに改ページされるため、印刷時は行内ブロックで4列に流す */
+  .payroll-cards { display: block !important; font-size: 0; orphans: 1; widows: 1; }
+  .payroll-card { display: inline-flex !important; vertical-align: top; width: calc(25% - 6px); margin: 0 6px 6px 0; font-size: 12px;
+    padding: 7px 9px !important; box-shadow: none !important; border: 1px solid #ccc; border-radius: 6px !important; gap: 0 !important; }
+  .payroll-card-head { margin-bottom: 2px !important; }
+  .payroll-row { padding: 0 !important; font-size: 9.5px !important; line-height: 1.3 !important; }
+  .payroll-row-label { font-size: 9px !important; }
+  .payroll-row-sub { font-size: 8px !important; }
+  .payroll-total { padding: 3px 0 0 !important; margin-top: 3px !important; font-size: 12px !important; }
+  .payroll-total-value { font-size: 14px !important; }
+  .payroll-actions { display: none !important; }
 }
 
 /* モーダル(TKC取込等) */

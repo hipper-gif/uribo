@@ -88,6 +88,22 @@ function AuthMessage({ state }: { state: AuthState }) {
   )
 }
 
+/** 印刷したときだけ紙の上端に出る帯（どの画面か・いつ刷ったか） */
+function PrintStamp() {
+  const [at, setAt] = useState(() => new Date())
+  useEffect(() => {
+    const h = () => setAt(new Date())
+    window.addEventListener('beforeprint', h)
+    return () => window.removeEventListener('beforeprint', h)
+  }, [])
+  return (
+    <div className="print-stamp">
+      <span>うりぼー（美容部 売上管理）</span>
+      <span>印刷 {at.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+    </div>
+  )
+}
+
 export default function App() {
   const auth = useAuthGate()
   // URL に ?admin=1 が含まれていれば管理者モード(LocalStorage に保存)
@@ -121,12 +137,14 @@ export default function App() {
           </nav>
           <div className="topbar-right">
             <span className="pill"><span className="dot" />LIVE · {new Date().toLocaleDateString('ja-JP')}</span>
-            <button className="icon-btn" title="印刷" onClick={() => window.print()}>
+            <button className="print-btn" title="表示中の画面をA4横で印刷" onClick={() => window.print()}>
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="3" y="8" width="10" height="6" rx="1"/><path d="M4 8V3h8v5M4 11h8"/></svg>
+              <span>印刷</span>
             </button>
           </div>
         </header>
         <main className="page">
+          <PrintStamp />
           <Routes>
             <Route path="/" element={<AnnualView />} />
             <Route path="/quarterly" element={<QuarterlyView />} />
