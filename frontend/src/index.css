@@ -733,6 +733,50 @@ input { font-family: inherit; }
 .helper-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .helper-input[type=number] { -moz-appearance: textfield; }
 
+/* ── 報告セット（/report） ── */
+.rp-print { height: 36px; padding: 0 16px; border-radius: var(--radius); border: 0; background: var(--ink); color: var(--paper); font-weight: 600; cursor: pointer; }
+.rp-controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 4px 0 16px; font-size: 13px; color: var(--ink-2); }
+.rp-controls label { display: inline-flex; align-items: center; gap: 6px; }
+.rp-controls .seg { display: inline-flex; background: var(--paper-3); border-radius: var(--radius); padding: 3px; gap: 2px; }
+.rp-controls .seg-btn[disabled] { opacity: .4; cursor: not-allowed; }
+.rp-check input { margin-right: 4px; }
+.rp-sheet { background: #fff; border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 18px; }
+.rp-sheet-h { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 12px; }
+.rp-sheet-h h2 { font-size: 17px; margin: 0; border-left: 4px solid var(--accent); padding-left: 10px; }
+.rp-sub { font-size: 12px; color: var(--ink-3); }
+.rp-foot { font-size: 11.5px; color: var(--ink-3); margin: 10px 0 0; line-height: 1.6; }
+.rp-cover { display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 12px; }
+@media (max-width: 900px) { .rp-cover { grid-template-columns: 1fr; } }
+.rp-card { border: 1px solid var(--rule); border-radius: var(--radius-lg); padding: 12px 14px; }
+.rp-card.main { background: var(--paper); border-color: var(--ink-4); }
+.rp-card h3 { margin: 0 0 8px; font-size: 15px; }
+.rp-blk { padding: 8px 0; border-top: 1px dashed var(--rule); }
+.rp-blk-l { font-size: 11.5px; color: var(--ink-3); margin-bottom: 4px; font-weight: 600; }
+.rp-kv { display: grid; grid-template-columns: 4em auto; align-items: baseline; column-gap: 8px; }
+.rp-kv span { font-size: 12px; color: var(--ink-2); }
+.rp-kv b { font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -.3px; }
+.rp-kv small { grid-column: 2; font-size: 11px; color: var(--ink-3); margin-bottom: 4px; }
+.rp-kv .ok, .rp-table .ok { color: var(--positive); font-style: normal; font-weight: 600; }
+.rp-kv .ng, .rp-table .ng { color: var(--negative); font-style: normal; }
+.rp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.rp-table th, .rp-table td { border: 1px solid var(--rule); padding: 4px 7px; text-align: right; white-space: nowrap; }
+.rp-table thead th { background: var(--paper-3); font-weight: 600; font-size: 11.5px; text-align: center; }
+.rp-table .nm { text-align: left; }
+.rp-table td.grp { text-align: center; background: var(--paper-2); color: var(--ink-2); font-size: 11px; font-weight: 600; }
+.rp-table .ref { color: var(--ink-3); }
+.rp-table .fc { color: var(--target); }
+.rp-table td.act { font-weight: 600; }
+.rp-table td.z { color: var(--ink-4); }
+.rp-table small.up { color: var(--positive); margin-left: 4px; font-size: 10px; }
+.rp-table small.dn { color: var(--negative); margin-left: 4px; font-size: 10px; }
+.rp-table tr.hl td { background: oklch(0.97 0.03 80); }
+.rp-table tr.sum td { background: var(--paper-2); font-weight: 600; border-top: 2px solid var(--ink-4); }
+.rp-table tr.year td { background: var(--paper-3); font-weight: 700; border-top: 2px solid var(--ink-3); }
+.rp-table tr.prof td { background: var(--target-soft); font-weight: 700; border-top: 2px solid var(--target); }
+.rp-table tr.strong td { font-weight: 600; }
+.rp-table tr.sub td.nm { color: var(--ink-3); }
+.rp-table td.prof { background: var(--target-soft); }
+
 /* 印刷ボタン（トップバー右） */
 .print-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -797,6 +841,18 @@ input { font-family: inherit; }
   .payroll-total { padding: 3px 0 0 !important; margin-top: 3px !important; font-size: 12px !important; }
   .payroll-total-value { font-size: 14px !important; }
   .payroll-actions { display: none !important; }
+
+  /* 報告セット: 1シート＝1枚 */
+  .rp-controls, .rp-print { display: none !important; }
+  .rp-sheet { border: 0 !important; border-radius: 0 !important; padding: 0 !important; margin: 0 !important; break-after: page; }
+  .rp-sheet:last-of-type { break-after: auto; }
+  .rp-table { font-size: 10.5px !important; }
+  .rp-table th, .rp-table td { padding: 2px 5px !important; }
+  .rp-kv b { font-size: 18px !important; }
+  .rp .page-head { display: none !important; }
+  .rp-cover { grid-template-columns: 1.15fr 1fr 1fr !important; gap: 8px !important; }
+  .rp-card { padding: 8px 10px !important; break-inside: avoid; }
+  .rp-blk { padding: 5px 0 !important; }
 }
 
 /* モーダル(TKC取込等) */
